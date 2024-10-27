@@ -3,7 +3,6 @@ form {
   flex-direction: column;
   align-items: center;
   margin-top: 0.25em;
-  /* margin-left: 320px; */
 }
 
 textarea {
@@ -68,7 +67,7 @@ svg > image {
 }
 
 .selected-stations-container {
-  min-width: 300px;
+  min-width: 25%;
   visibility: hidden;
 }
 .checkbox-year > label {
@@ -76,6 +75,7 @@ svg > image {
 }
 .selected-years-container {
   display: flex;
+  max-width: 35%;
   flex-direction: column;
   align-items: center;
 }
@@ -138,7 +138,7 @@ svg > image {
 }
 .navbar .search {
   flex: 1;
-  max-width: 320px;
+  max-width: 30%;
   border-radius: 0.25rem;
 }
 @media (max-width: 767.98px) {
@@ -148,7 +148,7 @@ svg > image {
 }
 @media (min-width: 576px) {
   .navbar .search {
-    min-width: 320px;
+    min-width: 10%;
   }
 }
 .navbar .search:focus-within {
@@ -404,7 +404,7 @@ h6,
   .container-md,
   .container-sm,
   .container {
-    max-width: 720px;
+    max-width: 100%;
   }
 }
 @media (min-width: 992px) {
@@ -1149,7 +1149,7 @@ button:not(:disabled),
   padding-bottom: 0.5rem;
 }
 .navbar-collapse {
-  flex-basis: 100%;
+  display: flex;
   flex-grow: 1;
   align-items: center;
 }
