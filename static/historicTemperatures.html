@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <title>Historic Temperatures</title>
+  <!-- <link rel="stylesheet" href="search.css"> -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="container container-np">
+    <nav class="container container-np navbar navbar-expand-lg">
+      <div class="input-group search">
+        <span id="searchIcon" class="input-group-text pe-1 border-0">
+          <svg id="magnifyingGlass" class="svg-inline--fa fa-search" viewBox="0 0 512 512">
+            <path
+              d="M505 442.7L405.3 343c-4.5-4.5-10.6-7-17-7H372c27.6-35.3 44-79.7 44-128C416 93.1 322.9 0 208 0S0 93.1 0 208s93.1 208 208 208c48.3 0 92.7-16.4 128-44v16.3c0 6.4 2.5 12.5 7 17l99.7 99.7c9.4 9.4 24.6 9.4 33.9 0l28.3-28.3c9.4-9.4 9.4-24.6.1-34zM208 336c-70.7 0-128-57.2-128-128 0-70.7 57.2-128 128-128 70.7 0 128 57.2 128 128 0 70.7-57.2 128-128 128z">
+            </path>
+          </svg>
+          <div id="loadingSpinner" class="spinner" style="display: none;"></div>
+        </span>
+        <input id="search" type="text" class="search-input form-control border-0" placeholder="Station or Place">
+        <div class="search-results list-group">
+          <!-- 
+          <div class="search-category list-group-item fw-bold">Places</div>
+          <div id="places-search-container"></div>
+           -->
+          <!-- <div class="search-category list-group-item fw-bold">Weather Stations</div> -->
+          <div id="stations-search-container"></div>
+        </div>
+      </div>
+      <div class="collapse navbar-collapse ms-3">
+        <div class="ms-auto btn btn-light">
+          Weather Stations:
+        </div>
+        <div id="selectedLocation">
+          <svg>
+            <image></image>
+          </svg>
+          <span></span>
+        </div>
+      </div>
+    </nav>
+    <form id="input-form">
+      <div class="input-container">
+        <div class="selected-stations-container">
+          <h6>Select Weather Stations</h6>
+          <div id="stations-checkboxes" class="background-blue checkbox-container-station"></div>
+        </div>
+        <div class="selected-years-container">
+          <h6>Select Years to Plot Daily High Air Temperatures</h6>
+          <div id="years-checkboxes" class="background-blue checkbox-container checkbox-container-year"></div>
+          <button type="submit" class="background-blue">Submit</button>
+          <div class="background-blue" style="visibility: hidden;">
+            <span id="submissionWarning" class="warning"></span>
+          </div>
+        </div>
+        <div>
+          <div>
+            <h6>Enter Years Manually</h6>
+            <textarea id="customInput"></textarea>
+          </div>
+          <div class="checkbox-container-all-stations">
+            <input type="checkbox" id="all-stations">
+            <label for="all-stations">All Stations in One Graph</label>
+          </div>
+        </div>
+      </div>
+    </form>
+    <div id="canvas-container">
+      <canvas id="canvas-all-stations" style="display: none;">
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="../dist/historicTemperatures.js"></script>
+</body>
+
+</html>

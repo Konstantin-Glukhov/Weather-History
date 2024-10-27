@@ -1,0 +1,14 @@
+{
+  "name": "Weather-History",
+  "version": "1.0.0",
+  "description": "Show Historical Weather Charts",
+  "scripts": {
+    "prebuild": "mkdir -Force dist",
+    "build": "tsc",
+    "tsc": "tsc",
+    "dist": "npm run static && npm run build",
+    "clean": "rm -ErrorAction SilentlyContinue -Force -Recurse dist"
+  },
+  "author": "Konstantin Glukhov",
+  "license": "ISC"
+}

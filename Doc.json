@@ -1,0 +1,99 @@
+{
+  "https://d.meteostat.net/app/proxy/stations/hourly?station=47662&start=2024-09-21&end=2024-09-28": {
+    "data": [
+      {
+        "time": "2024-09-21 00:00:00",
+        "temp": 30.5,
+        "dwpt": 25.1,
+        "rhum": 73.0,
+        "prcp": 0.0,
+        "snow": null,
+        "wdir": 199.0,
+        "wspd": 13.0,
+        "wpgt": null,
+        "pres": 1008.6,
+        "tsun": null,
+        "coco": 2
+      }
+    ]
+  },
+  "https://d.meteostat.net/app/proxy/stations/daily?station=47662&start=2024-09-21&end=2024-09-21": {
+    "data": [
+      {
+        "date": "2024-09-21",
+        "tavg": 28.8,
+        "tmin": 25.3,
+        "tmax": 32.5,
+        "prcp": 0.0,
+        "snow": null,
+        "wdir": 221.0,
+        "wspd": 11.1,
+        "wpgt": null,
+        "pres": 1008.1,
+        "tsun": null
+      }
+    ]
+  },
+  "https://d.meteostat.net/app/proxy/stations/normals?station=47662": {
+    "data": [
+      {
+        "start": 1961,
+        "end": 1990,
+        "month": 1,
+        "tavg": 5.4,
+        "tmin": 1.2,
+        "tmax": 9.5,
+        "prcp": 45.0,
+        "wspd": null,
+        "pres": 1015.1,
+        "tsun": 10500.0
+      }
+    ]
+  },
+  "https://d.meteostat.net/app/autocomplete?q=tokyo&lang=en": {
+    "data": {
+      "stations": [
+        {
+          "id": "47686",
+          "country": "JP",
+          "name": "New Tokyo Inter-National Airport",
+          "region": "CH",
+          "active": true
+        }
+      ],
+      "places": [
+        {
+          "id": "tokyo",
+          "country": "JP",
+          "name": "Tokyo",
+          "region": null
+        }
+      ]
+    }
+  },
+  "https://meteostat.net/props/en/place/jp/tokyo": {
+    "place": {
+      "id": "tokyo",
+      "name": "Tokyo",
+      "country": "JP",
+      "region": null,
+      "location": {
+        "latitude": 35.6895,
+        "longitude": 139.6917,
+        "elevation": 44
+      },
+      "timezone": "Asia/Tokyo"
+    },
+    "https://d.meteostat.net/app/nearby?lat=35.6895&lon=139.6917&lang=en&limit=7": {
+      "data": [
+        {
+          "id": "47662",
+          "name": "Tokyo",
+          "elevation": 5,
+          "active": true,
+          "distance": 6808
+        }
+      ]
+    }
+  }
+}

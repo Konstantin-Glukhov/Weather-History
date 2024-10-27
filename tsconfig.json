@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    // "sourceMap": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "esModuleInterop": true,
+    "lib": [
+      "DOM",
+      "ESNext"
+    ],
+    "pretty": true,
+    "strict": true,
+    "typeRoots": [
+      "/mnt/e/Opt/NodeJS/node_modules/@types",
+      "E:/Opt/NodeJS/node_modules/@types"
+    ],
+    "types": [
+      "chrome"
+    ],
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": [
+    "src"
+  ]
+}
