@@ -193,21 +193,78 @@ function findOrFillMissingDates(year, dateRange, data, missingData) {
     }
     return missingRanges;
 }
+async function IDBInit() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(idbName);
+        request.onerror = function () { reject(request.error); };
+        request.onupgradeneeded = function () {
+            try {
+                request.result.createObjectStore(storeName);
+            }
+            catch (error) {
+                reject(error); // If there is an error during upgrade, reject the Promise
+            }
+        };
+        request.onsuccess = function () {
+            try {
+                idxDB = request.result;
+                resolve(); // Resolve the Promise when successful
+            }
+            catch (error) {
+                reject(error); // If there is an error during success, reject the Promise
+            }
+        };
+    });
+}
+async function getStorageItem(stationYear, from = 'localStorage') {
+    return new Promise((resolve, reject) => {
+        let result = {};
+        if (from === 'localStorage') {
+            let text = localStorage.getItem(stationYear);
+            if (text)
+                result = JSON.parse(text);
+            resolve(result);
+        }
+        else {
+            const store = idxDB.transaction(storeName, 'readwrite').objectStore(storeName);
+            const request = store.get(stationYear);
+            request.onerror = function () { reject(request.error); };
+            request.onsuccess = function () {
+                if (request.result)
+                    result = request.result;
+                resolve(result);
+            };
+        }
+    });
+}
+async function setStorageItem(stationYear, stationYearStore, from = 'localStorage') {
+    return new Promise((resolve, reject) => {
+        if (from === 'localStorage') {
+            let text = JSON.stringify(stationYearStore);
+            localStorage.setItem(stationYear, text);
+            resolve();
+        }
+        else {
+            const store = idxDB.transaction(storeName, 'readwrite').objectStore(storeName);
+            const request = store.put(stationYearStore, stationYear);
+            request.onerror = function () { reject(request.error); };
+            request.onsuccess = function () { resolve(); };
+        }
+    });
+}
 async function getStationYearData(stationId, year, start, end) {
     // For the given station ID and year, try to get weather data from local storage, if not present get via API.
     // Save obtained data into stationsCache object by reference getYearData(stationId, year).
     let stationYearCache = stationsCache.getYearData(stationId, year);
-    let stationYearLocal = {};
     let stationYear = stationId + '-' + year;
     let missingCache = findOrFillMissingDates(year, { start, end }, stationYearCache);
     if (!missingCache.length)
         return;
-    let text = localStorage.getItem(stationYear);
     let missingLocalStorage = [];
-    if (text) {
-        stationYearLocal = JSON.parse(text);
+    let stationYearStore = await getStorageItem(stationYear, 'IndexedDB');
+    if (Object.keys(stationYearStore).length) {
         for (let missingRange of missingCache)
-            missingLocalStorage.push(...findOrFillMissingDates(year, missingRange, stationYearLocal, stationYearCache));
+            missingLocalStorage.push(...findOrFillMissingDates(year, missingRange, stationYearStore, stationYearCache));
         if (!missingLocalStorage.length)
             return;
     }
@@ -226,13 +283,12 @@ async function getStationYearData(stationId, year, start, end) {
                     delete row.date;
                     if (!allValuesAreNull(row)) {
                         date = date.substring(5, 10);
-                        stationYearLocal[date] = row;
+                        stationYearStore[date] = row;
                         stationYearCache[date] = row;
                     }
                 }
             }
-            let text = JSON.stringify(stationYearLocal);
-            localStorage.setItem(stationYear, text);
+            await setStorageItem(stationYear, stationYearStore, 'IndexedDB');
         }
     });
     await Promise.all(promises);
@@ -259,7 +315,7 @@ async function getStationsYearData() {
         await Promise.all(promises);
     }
     catch (error) {
-        console.error("Error fetching station data:", error);
+        console.error("Error fetching stations data:", error);
     }
 }
 function getCommonDatesPerStation() {
@@ -366,7 +422,7 @@ function applyStationSelection(event) {
         allStations.checked = false;
     populateSelectedStationsNavigationBar();
 }
-function switchChartType() {
+async function switchChartType() {
     setAllCanvasDisplay();
     if (selectedStations.size <= 1 && allStations.checked) {
         warn("Select more than one station to show all stations in a single chart");
@@ -375,7 +431,7 @@ function switchChartType() {
     }
     if (selectedStations.size <= 1)
         return;
-    renderChart();
+    await renderChart();
 }
 async function getChartData() {
     let stationsChartData = {};
@@ -613,22 +669,6 @@ function populateSelectedStationsNavigationBar() {
         appendStationWithFlag(selectedLocation, id, name, country);
     }
 }
-async function getFlagURL(country, sourceFolder = '../flags/') {
-    // Not working due to CORS restrictions
-    try {
-        country = country.toLowerCase();
-        let path = sourceFolder + country + '.svg';
-        let response = await fetch(path, { method: 'HEAD' });
-        if (response.ok)
-            return path;
-        else
-            return $flagsRoot + country + '.svg';
-    }
-    catch (error) {
-        console.error('Error:', error);
-    }
-    return '';
-}
 async function populateSearchResults(searchString) {
     if (updatingSearchResults)
         return;
@@ -665,7 +705,7 @@ async function populateSearchResults(searchString) {
     function insertHeader(container, text) {
         const header = document.createElement('div');
         header.className = searchHeaderClass;
-        header.innerText = 'Weather Stations';
+        header.innerText = text;
         container.appendChild(header);
     }
     async function selectClickedLocation(event) {
@@ -695,7 +735,7 @@ async function populateSearchResults(searchString) {
     if (placesSearchContainer && data.places) {
         insertHeader(placesSearchContainer, 'Places');
         data.places.forEach(place => {
-            let img = $flagImgTemplate.formatUnicorn({ country: place.country.toLowerCase() });
+            let imgHTML = $flagImgTemplate.formatUnicorn({ country: place.country.toLowerCase() });
             const placeLink = document.createElement('a');
             placeLink.className = locationClass;
             placeLink.setAttribute('data-id', place.id);
@@ -703,7 +743,7 @@ async function populateSearchResults(searchString) {
             placeLink.setAttribute('data-name', place.name);
             placeLink.setAttribute('data-type', 'place');
             placeLink.innerHTML = `
-      ${img}
+      ${imgHTML}
       <span>${place.name}</span>
       `;
             placesSearchContainer.appendChild(placeLink);
@@ -724,10 +764,9 @@ async function populateSearchResults(searchString) {
             stationLink.setAttribute('data-region', matchedStation.region);
             stationLink.setAttribute('data-active', matchedStation.active.toString());
             stationLink.setAttribute('data-type', 'station');
-            let img = $flagImgTemplate.formatUnicorn({ country: matchedStation.country.toLowerCase() });
-            // let img = await getFlagURL(matchedStation.country);
+            let imgHTML = $flagImgTemplate.formatUnicorn({ country: matchedStation.country.toLowerCase() });
             stationLink.innerHTML = `
-      ${img}
+      ${imgHTML}
       <span>${matchedStation.name}</span>
       <small class="text-muted">, ${matchedStation.region}</small>
       <code class="badge text-dark border ms-auto">${matchedStation.id}</code>
@@ -737,11 +776,6 @@ async function populateSearchResults(searchString) {
         });
     }
     updatingSearchResults = false;
-}
-function searchLocation() {
-    searchTextInput.addEventListener("input", async function () {
-        await populateSearchResults(this.value);
-    });
 }
 function clearSearchResults(clearSearchText = true) {
     if (updatingSearchResults)
@@ -796,7 +830,10 @@ const allStations = document.getElementById("all-stations");
 document.getElementById("input-form")?.addEventListener('submit', event => { event.preventDefault(); renderChart(event); });
 stationsCheckboxContainer.addEventListener('change', applyStationSelection);
 allStations.addEventListener('change', switchChartType);
+searchTextInput.addEventListener("input", async function () { await populateSearchResults(this.value); });
 // Script Variables
+const idbName = 'WeatherStationDB';
+const storeName = 'StationYearStore';
 const allStationsId = 'all stations';
 const abortController = new AbortController();
 const today = new Date();
@@ -807,10 +844,12 @@ let selectedYears = new Set();
 let priorSubmission = new Set();
 const charts = {};
 let updatingSearchResults = false;
-clearSearchResults();
-searchLocation();
-populateSelectedStationsNavigationBar();
-createYearSelection();
-keyDownHandler();
-// TODO: clear canvas when not year selection
-// TODO: clear canvas when station is unselected
+let idxDB;
+// main()
+window.addEventListener('load', async () => {
+    await IDBInit();
+    clearSearchResults();
+    populateSelectedStationsNavigationBar();
+    createYearSelection();
+    keyDownHandler();
+});

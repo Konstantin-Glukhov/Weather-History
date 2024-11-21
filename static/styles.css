@@ -85,10 +85,10 @@ svg > image {
   justify-content: center;
 }
 .checkbox-container {
-  margin: 1% 8%;
+  margin: 2% 12%;
 }
 .checkbox-container-station {
-  margin: 3% 8%;
+  margin: 5% 3%;
 }
 .checkbox-container-year {
   display: flex;

@@ -297,20 +297,71 @@ function findOrFillMissingDates(year: string, dateRange: DateRange, data: Weathe
   }
   return missingRanges;
 }
+async function IDBInit(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(idbName);
+    request.onerror = function () { reject(request.error); };
+    request.onupgradeneeded = function () {
+      try {
+        request.result.createObjectStore(storeName);
+      } catch (error) {
+        reject(error); // If there is an error during upgrade, reject the Promise
+      }
+    };
+    request.onsuccess = function () {
+      try {
+        idxDB = request.result;
+        resolve(); // Resolve the Promise when successful
+      } catch (error) {
+        reject(error); // If there is an error during success, reject the Promise
+      }
+    };
+  });
+}
+async function getStorageItem(stationYear: string, from: string = 'localStorage'): Promise<WeatherData> {
+  return new Promise((resolve, reject) => {
+    let result: WeatherData = {};
+    if (from === 'localStorage') {
+      let text = localStorage.getItem(stationYear);
+      if (text) result = JSON.parse(text) as WeatherData;
+      resolve(result);
+    } else {
+      const store = idxDB.transaction(storeName, 'readwrite').objectStore(storeName);
+      const request = store.get(stationYear);
+      request.onerror = function () { reject(request.error); };
+      request.onsuccess = function () {
+        if (request.result) result = request.result;
+        resolve(result);
+      };
+    }
+  });
+}
+async function setStorageItem(stationYear: string, stationYearStore: WeatherData, from: string = 'localStorage'): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (from === 'localStorage') {
+      let text = JSON.stringify(stationYearStore);
+      localStorage.setItem(stationYear, text);
+      resolve();
+    } else {
+      const store = idxDB.transaction(storeName, 'readwrite').objectStore(storeName);
+      const request = store.put(stationYearStore, stationYear);
+      request.onerror = function () { reject(request.error); };
+      request.onsuccess = function () { resolve(); };
+    }
+  });
+}
 async function getStationYearData(stationId: string, year: string, start: string, end: string): Promise<void> {
   // For the given station ID and year, try to get weather data from local storage, if not present get via API.
   // Save obtained data into stationsCache object by reference getYearData(stationId, year).
   let stationYearCache: WeatherData = stationsCache.getYearData(stationId, year);
-  let stationYearLocal: WeatherData = {};
   let stationYear = stationId + '-' + year;
   let missingCache: DateRange[] = findOrFillMissingDates(year, { start, end }, stationYearCache);
   if (!missingCache.length) return;
-  let text = localStorage.getItem(stationYear);
   let missingLocalStorage: DateRange[] = [];
-  if (text) {
-    stationYearLocal = JSON.parse(text) as WeatherData;
+  let stationYearStore: WeatherData = await getStorageItem(stationYear, 'IndexedDB');
+  if (Object.keys(stationYearStore).length) {
     for (let missingRange of missingCache)
-      missingLocalStorage.push(...findOrFillMissingDates(year, missingRange, stationYearLocal, stationYearCache));
+      missingLocalStorage.push(...findOrFillMissingDates(year, missingRange, stationYearStore, stationYearCache));
     if (!missingLocalStorage.length) return;
   } else missingLocalStorage = missingCache;
   warn("Fetching data", 'blink');
@@ -318,7 +369,7 @@ async function getStationYearData(stationId: string, year: string, start: string
     let start = year + '-' + missingRange.start;
     let end = year + '-' + missingRange.end;
     const url = stationURLTemplate.formatUnicorn({ stationId, start, end });
-    const { data: sourceData }: { data: SourceData[] } = await fetchJson(url) as { data: SourceData[] };
+    const { data: sourceData }: { data: SourceData[] } = await fetchJson(url);
     if (sourceData.length > 0) {
       for (let row of sourceData) {
         let date = row.date;
@@ -326,13 +377,12 @@ async function getStationYearData(stationId: string, year: string, start: string
           delete row.date;
           if (!allValuesAreNull(row)) {
             date = date.substring(5, 10);
-            stationYearLocal[date] = row;
+            stationYearStore[date] = row;
             stationYearCache[date] = row;
           }
         }
       }
-      let text = JSON.stringify(stationYearLocal);
-      localStorage.setItem(stationYear, text);
+      await setStorageItem(stationYear, stationYearStore, 'IndexedDB');
     }
   });
   await Promise.all(promises);
@@ -358,7 +408,7 @@ async function getStationsYearData(): Promise<void> {
   try {
     await Promise.all(promises);
   } catch (error) {
-    console.error("Error fetching station data:", error);
+    console.error("Error fetching stations data:", error);
   }
 }
 
@@ -462,7 +512,7 @@ function applyStationSelection(event: Event) {
   populateSelectedStationsNavigationBar();
 }
 
-function switchChartType(this: HTMLInputElement) {
+async function switchChartType(this: HTMLInputElement) {
   setAllCanvasDisplay();
   if (selectedStations.size <= 1 && allStations.checked) {
     warn("Select more than one station to show all stations in a single chart");
@@ -470,7 +520,7 @@ function switchChartType(this: HTMLInputElement) {
     searchTextInput.focus();
   }
   if (selectedStations.size <= 1) return;
-  renderChart();
+  await renderChart();
 }
 
 async function getChartData(): Promise<StationsChartData> {
@@ -708,21 +758,6 @@ function populateSelectedStationsNavigationBar() {
   }
 }
 
-async function getFlagURL(country: string, sourceFolder: string = '../flags/'): Promise<string> {
-  // Not working due to CORS restrictions
-  try {
-    country = country.toLowerCase();
-    let path = sourceFolder + country + '.svg';
-    let response = await fetch(path, { method: 'HEAD' });
-    if (response.ok)
-      return path;
-    else return $flagsRoot + country + '.svg';
-  } catch (error) {
-    console.error('Error:', error);
-  }
-  return '';
-}
-
 async function populateSearchResults(searchString: string): Promise<void> {
   if (updatingSearchResults) return;
   if (searchString.length <= 2) {
@@ -759,7 +794,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
   function insertHeader(container: HTMLElement, text: string) {
     const header = document.createElement('div');
     header.className = searchHeaderClass;
-    header.innerText = 'Weather Stations';
+    header.innerText = text;
     container.appendChild(header);
   }
 
@@ -789,9 +824,9 @@ async function populateSearchResults(searchString: string): Promise<void> {
   // Add Places
   // Cannot use places because there is no API to find the nearest station
   if (placesSearchContainer && data.places) {
-    insertHeader(placesSearchContainer, 'Places')
+    insertHeader(placesSearchContainer, 'Places');
     data.places.forEach(place => {
-      let img = $flagImgTemplate.formatUnicorn({ country: place.country.toLowerCase() });
+      let imgHTML = $flagImgTemplate.formatUnicorn({ country: place.country.toLowerCase() });
       const placeLink = document.createElement('a');
       placeLink.className = locationClass;
       placeLink.setAttribute('data-id', place.id);
@@ -799,7 +834,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
       placeLink.setAttribute('data-name', place.name);
       placeLink.setAttribute('data-type', 'place');
       placeLink.innerHTML = `
-      ${img}
+      ${imgHTML}
       <span>${place.name}</span>
       `;
       placesSearchContainer.appendChild(placeLink);
@@ -808,7 +843,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
   }
   // Add Weather Stations
   if (stationsSearchContainer && data.stations) {
-    insertHeader(stationsSearchContainer, 'Weather Stations')
+    insertHeader(stationsSearchContainer, 'Weather Stations');
     data.stations.forEach(async matchedStation => {
       if (!matchedStation.active) return;
       const stationLink = document.createElement('a');
@@ -819,10 +854,9 @@ async function populateSearchResults(searchString: string): Promise<void> {
       stationLink.setAttribute('data-region', matchedStation.region);
       stationLink.setAttribute('data-active', matchedStation.active.toString());
       stationLink.setAttribute('data-type', 'station');
-      let img = $flagImgTemplate.formatUnicorn({ country: matchedStation.country.toLowerCase() });
-      // let img = await getFlagURL(matchedStation.country);
+      let imgHTML = $flagImgTemplate.formatUnicorn({ country: matchedStation.country.toLowerCase() });
       stationLink.innerHTML = `
-      ${img}
+      ${imgHTML}
       <span>${matchedStation.name}</span>
       <small class="text-muted">, ${matchedStation.region}</small>
       <code class="badge text-dark border ms-auto">${matchedStation.id}</code>
@@ -832,12 +866,6 @@ async function populateSearchResults(searchString: string): Promise<void> {
     });
   }
   updatingSearchResults = false;
-}
-
-function searchLocation(): void {
-  searchTextInput.addEventListener("input", async function (this: HTMLInputElement) {
-    await populateSearchResults(this.value);
-  });
 }
 
 function clearSearchResults(clearSearchText: boolean = true) {
@@ -888,7 +916,10 @@ const allStations = document.getElementById("all-stations") as HTMLInputElement;
 document.getElementById("input-form")?.addEventListener('submit', event => { event.preventDefault(); renderChart(event) });
 stationsCheckboxContainer.addEventListener('change', applyStationSelection);
 allStations.addEventListener('change', switchChartType);
+searchTextInput.addEventListener("input", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
 // Script Variables
+const idbName = 'WeatherStationDB';
+const storeName = 'StationYearStore';
 const allStationsId = 'all stations';
 const abortController = new AbortController();
 const today = new Date();
@@ -899,11 +930,12 @@ let selectedYears: Set<string> = new Set();
 let priorSubmission: Set<string> = new Set();
 const charts: Charts = {};
 let updatingSearchResults = false;
-
-clearSearchResults();
-searchLocation();
-populateSelectedStationsNavigationBar();
-createYearSelection();
-keyDownHandler();
-// TODO: clear canvas when not year selection
-// TODO: clear canvas when station is unselected
+let idxDB: IDBDatabase;
+// main()
+window.addEventListener('load', async () => {
+  await IDBInit();
+  clearSearchResults();
+  populateSelectedStationsNavigationBar();
+  createYearSelection();
+  keyDownHandler();
+});

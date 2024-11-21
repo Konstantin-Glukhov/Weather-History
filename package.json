@@ -1,6 +1,6 @@
 {
   "name": "Weather-History",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Show Historical Weather Charts",
   "scripts": {
     "prebuild": "mkdir -Force dist",
