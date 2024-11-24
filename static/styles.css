@@ -75,7 +75,7 @@ svg > image {
 }
 .selected-years-container {
   display: flex;
-  max-width: 35%;
+  min-width: 33%;
   flex-direction: column;
   align-items: center;
 }
