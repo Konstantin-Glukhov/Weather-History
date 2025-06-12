@@ -75,6 +75,11 @@ type AutoComplete = {
   ];
 }
 
+class DateRange {
+  start: string = '';
+  end: string = '';
+}
+
 type WeatherParameters = {
   tmax: number,
   tavg: number,
@@ -93,34 +98,32 @@ type SourceData = {
 } & WeatherParameters;
 
 type WeatherData = {
+  // Object with short date (mm-dd) as key and weather parameters as value
   [shortDate: string]: WeatherParameters
 };
 
-type StationYearData = {
-  [stationYear: string]: WeatherData;
-};
-
 type YearData = {
+  // Object with year as key and WeatherData as value
   [year: string]: WeatherData;
 };
 
-class DateRange {
-  start: string = '';
-  end: string = '';
-}
-
 class Station {
+  // Station object
   name: string;
   country: string;
   region: string | null;
   active: boolean;
-  data: YearData;
-  constructor({ name, country, region, active }: Omit<Station, 'selected' | 'data'>) {
+  data?: YearData;
+  constructor({ name, country, region, active }: Station) {
     this.name = name;
     this.country = country;
     this.region = region;
     this.active = active;
     this.data = {};
+  }
+  get?(property: keyof Station): any {
+    if (property in this)
+      return this[property];
   }
 }
 
@@ -181,28 +184,27 @@ class Stations {
         filteredStations[id] = this[id];
     return filteredStations;
   }
-  get(id: string, property: keyof Station): any {
-    if (id in this && property in this[id])
-      return this[id][property];
-  }
-  getData(id: string): YearData {
+  getStationData(id: string): YearData {
+    // Returns the years object with weather data for a given station ID.
+    // { year: { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }, ... }
     return this[id]?.data;
   }
-  getYearData(id: string, year: string): WeatherData {
-    this[id].data[year] ??= {};
+  getStationYearData(id: string, year: string): WeatherData {
+    // Returns the weather data for a given station ID and year.
+    // { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }
+    this[id].data[year] ??= {}; // Initialize if not present
     return this[id].data[year];
   }
-  getName(id: string): string {
+  getStationYearWeatherParameters(id: string, year: string, date: string): WeatherParameters {
+    // Returns the weather data for a given station ID, year and date.
+    // { tmax: 30, tmin: 20, ... }
+    return this.getStationYearData(id, year)[date] || {};
+  }
+  getNameOrId(id: string): string {
     return this[id]?.name ?? id;
   }
   getCountry(id: string): string {
     return this[id]?.country;
-  }
-  getRegion(id: string): string | null {
-    return this[id]?.region;
-  }
-  isActive(id: string): boolean | null {
-    return this[id]?.active;
   }
 }
 
@@ -218,16 +220,120 @@ String.prototype.formatUnicorn = function (this: string, ...args: any[]) {
   return str.trim();
 };
 
-function getRGBValue(stationId: string, year: string): string {
-  let numericId = parseInt(stationId.replace(/\D/g, '1'));
-  let numericYear = parseInt(year) * 10000;
+function getRGBValue0(stationId: string, year: string): string {
+  // This implementation multiplies the parsed year by 10,000
+  // and adds it to the numeric part of the station ID to create a hash.However,
+  // because the RGB components are calculated using modulo 256, and the year is
+  // simply scaled and added, years that are close together(e.g., 2020, 2021, 2022,
+  // etc.) will often produce similar or even identical colors—especially if the
+  // numeric part of the station ID is small or zero.
+
+  // Why does this happen ?  The difference between consecutive years(e.g., 2021
+  // and 2022) is only 10,000 in the hash.  When multiplied and then taken modulo
+  // 256, this difference often "wraps around" and produces the same or similar RGB
+  // values.  The hash function is not distributing the year and station ID
+  // information evenly across the color space.
+
+  let numericId = stationId.match(/\d+/) ? parseInt(stationId.replace(/\D/g, '')) : 1; // Default to 1 if no numeric characters
+  let numericYear = Number.isNaN(parseInt(year)) ? 0 : parseInt(year) * 10000;
   let hash = numericId + numericYear;
   const r = (hash * 10) % 256; // Red component
   const g = (hash * 100) % 256; // Green component
   const b = (hash * 1000) % 256; // Blue component
   // Return hex color string
-  let rgb = (1 << 24) + (r << 16) + (g << 8) + b;
-  return "#" + rgb.toString(16).slice(1).toUpperCase();
+  let hexColor = (1 << 24) + (r << 16) + (g << 8) + b;
+  return "#" + hexColor.toString(16).slice(1).toUpperCase();
+}
+
+function getRGBValue1(stationId: string, year: string): string {
+  // This function uses both the station ID and year as a string, so even small
+  // changes(like a different year) will result in a very different color.  The
+  // hash is distributed across all three color channels, reducing the chance of
+  // similar or duplicate colors for nearby years.
+
+  // This code implements the djb2 string hash algorithm, a simple and popular
+  // method for generating a numeric hash from a string. It starts by
+  // initializing the hash value to 5381, a commonly used seed for this
+  // algorithm. Then, it iterates over each character in the input string (str).
+  // For each character, it updates the hash by multiplying the current hash by
+  // 33 (achieved by shifting left by 5 bits and adding the original hash) and
+  // then adding the Unicode code point of the character. This process mixes the
+  // characters of the string into the hash value, producing a well-distributed
+  // integer result. The djb2 algorithm is widely used for its simplicity and
+  // reasonably good distribution of hash values for different input strings. In
+  // this context, it helps generate a unique color for each combination of
+  // station ID and year.
+
+  const str = `${stationId}-${year}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  // Mix the bits to spread out similar inputs
+  hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
+  hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
+  hash = (hash >> 16) ^ hash;
+  // Extract RGB
+  const r = (hash & 0xFF0000) >> 16;
+  const g = (hash & 0x00FF00) >> 8;
+  const b = (hash & 0x0000FF);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+}
+
+function getRGBValue2(stationId: string, year: string): string {
+  const str = `${stationId}-${year}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
+  hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
+  hash = (hash >> 16) ^ hash;
+  let r = (hash & 0xFF0000) >> 16;
+  let g = (hash & 0x00FF00) >> 8;
+  let b = (hash & 0x0000FF);
+
+  // Clamp RGB values to avoid too-bright colors
+  const min = 40;   // Minimum value for each channel (avoid too dark)
+  const max = 200;  // Maximum value for each channel (avoid too light)
+  r = Math.max(min, Math.min(max, r));
+  g = Math.max(min, Math.min(max, g));
+  b = Math.max(min, Math.min(max, b));
+
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+}
+function getDistinctColor(stationId: string, year: string, totalVariants = 20): string {
+  // Create a unique index for each (station, year) pair
+  const str = `${stationId}-${year}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) & 0x7FFFFFFF;
+  }
+  // Spread hues evenly
+  const hue = Math.floor((hash % totalVariants) * (360 / totalVariants));
+  const saturation = 80;
+  const lightness = 45;
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+function getDistinctColor1(stationId: string, year: string): string {
+  // Combine stationId and year into a single string and hash it to an integer
+  const str = `${stationId}-${year}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) & 0xFFFFFFFF;
+  }
+  // Use golden angle to spread hues
+  const goldenAngle = 137.508;
+  // Use the hash as an index to multiply by the golden angle
+  const hue = Math.abs(Math.floor(hash * goldenAngle)) % 360;
+  const saturation = 70; // percent
+  const lightness = 50; // percent
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+function getRGBValue(stationId: string, year: string): string {
+  return getRGBValue1(stationId, year);
 }
 
 async function fetchJson(url: string, options: RequestInit = {}): Promise<any> {
@@ -271,17 +377,22 @@ function removeNullsFromSourceData(data: SourceData[]): void {
   for (let i = data.length - 1; i >= 0; i--)
     if (allValuesAreNull(data[i], keys)) data.splice(i, 1); // del array element by index
 }
-function findOrFillMissingDates(year: string, dateRange: DateRange, data: WeatherData, missingData?: WeatherData): DateRange[] {
-  let startDate = new Date(year + '-' + dateRange.start);
-  let endDate = new Date(year + '-' + dateRange.end);
+
+function findOrFillMissingDatesData(
+  year: string,
+  dateRange: DateRange,
+  data: WeatherData,
+  missingData?: WeatherData
+): DateRange[] {
+  let startDate = new Date(year + "-" + dateRange.start);
+  let endDate = new Date(year + "-" + dateRange.end);
   let missingRange: DateRange = new DateRange();
   let missingRanges: DateRange[] = [];
-  let priorDate = '';
+  let priorDate = "";
   for (; startDate <= endDate; startDate.setDate(startDate.getDate() + 1)) {
     const date = startDate.toISOString().substring(5, 10);
     if (date in data) {
-      if (missingData)
-        missingData[date] = data[date];
+      if (missingData) missingData[date] = data[date];
       if (missingRange.start) {
         missingRange.end = priorDate;
         missingRanges.push(missingRange);
@@ -350,18 +461,18 @@ async function setStorageItem(stationYear: string, stationYearStore: WeatherData
     }
   });
 }
-async function getStationYearData(stationId: string, year: string, start: string, end: string): Promise<void> {
+async function fetchStationYearData(stationId: string, year: string, start: string, end: string): Promise<void> {
   // For the given station ID and year, try to get weather data from local storage, if not present get via API.
   // Save obtained data into stationsCache object by reference getYearData(stationId, year).
-  let stationYearCache: WeatherData = stationsCache.getYearData(stationId, year);
+  let stationYearCache: WeatherData = stationsCache.getStationYearData(stationId, year);
   let stationYear = stationId + '-' + year;
-  let missingCache: DateRange[] = findOrFillMissingDates(year, { start, end }, stationYearCache);
+  let missingCache: DateRange[] = findOrFillMissingDatesData(year, { start, end }, stationYearCache);
   if (!missingCache.length) return;
   let missingLocalStorage: DateRange[] = [];
   let stationYearStore: WeatherData = await getStorageItem(stationYear, 'IndexedDB');
   if (Object.keys(stationYearStore).length) {
     for (let missingRange of missingCache)
-      missingLocalStorage.push(...findOrFillMissingDates(year, missingRange, stationYearStore, stationYearCache));
+      missingLocalStorage.push(...findOrFillMissingDatesData(year, missingRange, stationYearStore, stationYearCache));
     if (!missingLocalStorage.length) return;
   } else missingLocalStorage = missingCache;
   warn("Fetching data", 'blink');
@@ -389,7 +500,7 @@ async function getStationYearData(stationId: string, year: string, start: string
   warn("", 'blink');
 }
 
-async function getStationsYearData(): Promise<void> {
+async function fetchAllStationsYearData(): Promise<{ [id: string]: Set<string> }> {
   // Get weather data for all selectedStations and selectedYears and save them in stationsCache object.
   const todayDate = today.toISOString().substring(5, 10);
   const currentYearRequested: boolean = selectedYears.has(todayYear);
@@ -402,7 +513,7 @@ async function getStationsYearData(): Promise<void> {
     for (let year of selectedYears) {
       let start = "01-01";
       let end = endDate;
-      promises.push(getStationYearData(stationId, year, start, end));
+      promises.push(fetchStationYearData(stationId, year, start, end));
     }
   }
   try {
@@ -410,14 +521,19 @@ async function getStationsYearData(): Promise<void> {
   } catch (error) {
     console.error("Error fetching stations data:", error);
   }
+  return getCommonDatesData();
 }
 
-function getCommonDatesPerStation(): { [id: string]: Set<string> } {
-  let stationLabel: { [id: string]: Set<string> } = {};
+function getCommonDatesData(): { [id: string]: Set<string> } {
+  // Get common dates across all years and their data for each selected station
+  // Note: this function assumes that stationsCache has been populated with data
+  // for selected stations and years. Yeach year may have different dates, so we
+  // need to find the intersection of dates.
+  let stations: { [id: string]: Set<string> } = {};
   for (const stationId of selectedStations) {
-    stationLabel[stationId] = Array
+    stations[stationId] = Array
       .from(selectedYears)
-      .map(year => new Set(Object.keys(stationsCache.getData(stationId)[year])))
+      .map(year => new Set(Object.keys(stationsCache.getStationYearData(stationId, year))))
       .reduce((acc, cur) => acc.intersection(cur));
   }
   /* Alternative code
@@ -431,7 +547,7 @@ function getCommonDatesPerStation(): { [id: string]: Set<string> } {
     })
   );
   */
-  return stationLabel;
+  return stations;
 }
 
 function isResearchSelected(event: Event | undefined): boolean {
@@ -525,8 +641,8 @@ async function switchChartType(this: HTMLInputElement) {
 
 async function getChartData(): Promise<StationsChartData> {
   let stationsChartData: StationsChartData = {};
-  await getStationsYearData(); // Get data for selected stations and years
-  let commonDatesPerStation: { [id: string]: Set<string> } = getCommonDatesPerStation();
+  // Get data for selected stations and years
+  let stationsCommonDatesData: { [id: string]: Set<string> } = await fetchAllStationsYearData();
   const { [allStationsId]: allStationsChart, ...stationsCharts } = charts;
   const selectedDatasets = selectedStations.union(selectedYears);
   if (allStations.checked && selectedStations.size > 1) {
@@ -548,15 +664,21 @@ async function getChartData(): Promise<StationsChartData> {
       stationsChartData[allStationsId] = allStationsChart.data;
     else {
       // Get common dates across all stations
-      const labels = Array.from(Object.values(commonDatesPerStation).reduce((acc, cur) => acc.intersection(cur))).sort();
-      let chartData: ChartData = {
+      const labels = Array.from(Object.values(stationsCommonDatesData).reduce((acc, cur) => acc.intersection(cur))).sort();
+      stationsChartData[allStationsId] = {
         labels,
-        datasets: Array.from(selectedStations).flatMap(stationId => {
-          let name = stationsCache.getName(stationId).replace(/[\p{P}\p{Z}]+.*$/gu, '');
-          return Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: name + '-' + year, dates: labels }));
-        }),
+        // For each selected station, create datasets for each selected year
+        // The flatMap ensures that all datasets for all years and stations are returned as a single, flat array,
+        // which is useful for charting libraries that expect a list of datasets rather than a nested array structure.
+        // This approach efficiently prepares the data needed to visualize temperature trends for multiple stations and years in a chart.
+        datasets: Array
+          .from(selectedStations)
+          .flatMap(stationId => {
+            // Remove punctuation and whitespace characters, and everything after them, from the station name
+            let name = stationsCache.getNameOrId(stationId).replace(/[\p{P}\p{Z}]+.*$/gu, "");
+            return Array.from(selectedYears).map((year) => newChartDataset({ stationId, year, label: name + "-" + year, dates: labels }));
+          }),
       };
-      stationsChartData[allStationsId] = chartData;
     }
   } else {
     let cachedDatasets = new Set<string>();
@@ -566,11 +688,11 @@ async function getChartData(): Promise<StationsChartData> {
     }
     if (!areSetsEqual(selectedDatasets, cachedDatasets)) {
       for (const stationId of selectedStations) {
-        // if (stationId in charts) { }
-        let labels = Array.from(commonDatesPerStation[stationId]).sort();
+        let labels = Array.from(stationsCommonDatesData[stationId]).sort();
         let chartData: ChartData = {
           labels,
-          datasets: Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: year, dates: labels })),
+          // datasets: Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: year, dates: labels })),
+          datasets: Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: getRGBValue(stationId, year), dates: labels })),
         };
         stationsChartData[stationId] = chartData;
       }
@@ -582,7 +704,7 @@ function newChartDataset({ stationId, year, label, dates }: { stationId: string,
   let rgb;
   let dataset: ChartDataset = {
     label,
-    data: dates.map(date => stationsCache.getData(stationId)[year][date].tmax),
+    data: dates.map(date => stationsCache.getStationYearWeatherParameters(stationId, year, date)?.tmax),
   };
   if (label == year) {
     rgb = getRGBValue('27500', year);
@@ -602,9 +724,9 @@ async function renderChart(event: Event | undefined = undefined): Promise<void> 
   clearSearchResults(false);
   if (!canvasContainer) throw new Error('Canvas container is missing');
   const stationsChartData: StationsChartData = await getChartData();
-  for (let [stationId, chart] of Object.entries(stationsChartData).sort(([a,], [b,]) => stationsCache.getName(a).localeCompare(stationsCache.getName(b)))
+  for (let [stationId, chart] of Object.entries(stationsChartData).sort(([a,], [b,]) => stationsCache.getNameOrId(a).localeCompare(stationsCache.getNameOrId(b)))
   ) {
-    let title = ['Historic Daily High Air Temperature in ' + stationsCache.getName(stationId)];
+    let title = ['Historic Daily High Air Temperature in ' + stationsCache.getNameOrId(stationId)];
     if (chart.datasets.length > 1)
       title.push('Click on the legend icon to deselect/reselect the graph');
     const options = {
@@ -743,7 +865,7 @@ function appendStationWithFlag(element: HTMLElement, stationId: string, name: st
     element.appendChild(eSVG);
   }
   const eName = document.createElement("span");
-  eName.textContent = name || stationsCache.getName(stationId);
+  eName.textContent = name || stationsCache.getNameOrId(stationId);
   element.appendChild(eName);
 }
 
