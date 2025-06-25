@@ -1,4 +1,65 @@
 "use strict";
+class ChartDataset {
+    label;
+    data;
+    cubicInterpolationMode;
+    tension;
+    borderColor; // '#FFB1C1'
+    backgroundColor; // '#FFB1C1'
+    // user properties, not in standard chart.js
+    stationId;
+    stationName;
+    year;
+    constructor(type, stationId, year, dates) {
+        // Remove punctuation and whitespace characters, and everything after them, from the station name
+        let rgb;
+        let stationName = stations.getNameOrId(stationId);
+        if (type == 'all') {
+            rgb = getRGBValue(stationId, year);
+            this.label = stationName + '-' + year; // Label for all stations is station name + year
+        }
+        else {
+            rgb = getRGBValue('27500', year);
+            this.label = year; // Label for single station is year
+        }
+        this.data = dates.map(date => stations.getStationYearWeatherParameters(stationId, year, date)?.tmax);
+        this.borderColor = rgb;
+        this.backgroundColor = rgb;
+        // Custom properties
+        this.stationId = stationId;
+        this.stationName = stationName;
+        this.year = year;
+    }
+}
+;
+class ChartData {
+    labels; // Sorted array of short dates (mm-dd)
+    datasets;
+    /**
+     * Constructs a ChartData object.
+     * @param stationId - The station ID for which to create datasets
+     * @param dates - An array of date strings (mm-dd) to use as labels for the chart.
+     *
+     * If stationId is 'all', creates datasets for each selected station and year, flattening the result.
+     * Otherwise creates datasets for the selected years for the given station.
+     */
+    constructor({ stationId, dates }) {
+        this.labels = dates; // sorted short dates (mm-dd)
+        const years = Array.from(selectedYears);
+        if (stationId === allStationsId)
+            this.datasets = Array
+                .from(selectedStations)
+                .map(station => years.map(year => new ChartDataset('all', station, year, dates))).flat();
+        else
+            this.datasets = years.map(year => new ChartDataset('single', stationId, year, dates));
+    }
+    isLastDate(shortDate) {
+        if (this?.labels.length > 0)
+            return this.labels[this.labels.length - 1] === shortDate;
+        return false;
+    }
+}
+;
 class DateRange {
     start = '';
     end = '';
@@ -9,13 +70,12 @@ class Station {
     country;
     region;
     active;
-    data;
+    data = {}; // Object with year as key and WeatherData as value
     constructor({ name, country, region, active }) {
-        this.name = name;
+        this.name = name.replace(/[\p{P}\p{Z}]+.*$/gu, "");
         this.country = country;
         this.region = region;
         this.active = active;
-        this.data = {};
     }
     get(property) {
         if (property in this)
@@ -23,11 +83,6 @@ class Station {
     }
 }
 class Stations {
-    constructor(id, station) {
-        if (id && station) {
-            this[id] = station; // Initialize if provided
-        }
-    }
     [Symbol.iterator]() {
         const keys = Object.keys(this);
         let index = 0;
@@ -86,11 +141,22 @@ class Stations {
         // { year: { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }, ... }
         return this[id]?.data;
     }
+    hasStationYearData(id, year) {
+        // Check if the station has weather data for a given year.
+        // Returns true if the station ID and year exist in the data.
+        return this[id]?.data?.[year] && Object.keys(this[id].data[year]).length > 0;
+    }
     getStationYearData(id, year) {
         // Returns the weather data for a given station ID and year.
         // { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }
-        this[id].data[year] ??= {}; // Initialize if not present
-        return this[id].data[year];
+        if (this[id] && this[id].data) {
+            this[id].data[year] ??= {};
+            return this[id].data[year];
+        }
+        return {};
+    }
+    getStationYearDataDates(id, year) {
+        return Object.keys(this.getStationYearData(id, year));
     }
     getStationYearWeatherParameters(id, year, date) {
         // Returns the weather data for a given station ID, year and date.
@@ -115,29 +181,7 @@ String.prototype.formatUnicorn = function (...args) {
     }
     return str.trim();
 };
-function getRGBValue0(stationId, year) {
-    // This implementation multiplies the parsed year by 10,000
-    // and adds it to the numeric part of the station ID to create a hash.However,
-    // because the RGB components are calculated using modulo 256, and the year is
-    // simply scaled and added, years that are close together(e.g., 2020, 2021, 2022,
-    // etc.) will often produce similar or even identical colors—especially if the
-    // numeric part of the station ID is small or zero.
-    // Why does this happen ?  The difference between consecutive years(e.g., 2021
-    // and 2022) is only 10,000 in the hash.  When multiplied and then taken modulo
-    // 256, this difference often "wraps around" and produces the same or similar RGB
-    // values.  The hash function is not distributing the year and station ID
-    // information evenly across the color space.
-    let numericId = stationId.match(/\d+/) ? parseInt(stationId.replace(/\D/g, '')) : 1; // Default to 1 if no numeric characters
-    let numericYear = Number.isNaN(parseInt(year)) ? 0 : parseInt(year) * 10000;
-    let hash = numericId + numericYear;
-    const r = (hash * 10) % 256; // Red component
-    const g = (hash * 100) % 256; // Green component
-    const b = (hash * 1000) % 256; // Blue component
-    // Return hex color string
-    let hexColor = (1 << 24) + (r << 16) + (g << 8) + b;
-    return "#" + hexColor.toString(16).slice(1).toUpperCase();
-}
-function getRGBValue1(stationId, year) {
+function getRGBValue(stationId, year) {
     // This function uses both the station ID and year as a string, so even small
     // changes(like a different year) will result in a very different color.  The
     // hash is distributed across all three color channels, reducing the chance of
@@ -169,58 +213,6 @@ function getRGBValue1(stationId, year) {
     const g = (hash & 0x00FF00) >> 8;
     const b = (hash & 0x0000FF);
     return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
-}
-function getRGBValue2(stationId, year) {
-    const str = `${stationId}-${year}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash |= 0;
-    }
-    hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
-    hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
-    hash = (hash >> 16) ^ hash;
-    let r = (hash & 0xFF0000) >> 16;
-    let g = (hash & 0x00FF00) >> 8;
-    let b = (hash & 0x0000FF);
-    // Clamp RGB values to avoid too-bright colors
-    const min = 40; // Minimum value for each channel (avoid too dark)
-    const max = 200; // Maximum value for each channel (avoid too light)
-    r = Math.max(min, Math.min(max, r));
-    g = Math.max(min, Math.min(max, g));
-    b = Math.max(min, Math.min(max, b));
-    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
-}
-function getDistinctColor(stationId, year, totalVariants = 20) {
-    // Create a unique index for each (station, year) pair
-    const str = `${stationId}-${year}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = (hash * 31 + str.charCodeAt(i)) & 0x7FFFFFFF;
-    }
-    // Spread hues evenly
-    const hue = Math.floor((hash % totalVariants) * (360 / totalVariants));
-    const saturation = 80;
-    const lightness = 45;
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-function getDistinctColor1(stationId, year) {
-    // Combine stationId and year into a single string and hash it to an integer
-    const str = `${stationId}-${year}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = (hash * 31 + str.charCodeAt(i)) & 0xFFFFFFFF;
-    }
-    // Use golden angle to spread hues
-    const goldenAngle = 137.508;
-    // Use the hash as an index to multiply by the golden angle
-    const hue = Math.abs(Math.floor(hash * goldenAngle)) % 360;
-    const saturation = 70; // percent
-    const lightness = 50; // percent
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-function getRGBValue(stationId, year) {
-    return getRGBValue1(stationId, year);
 }
 async function fetchJson(url, options = {}) {
     const res = await fetch(url, options);
@@ -262,36 +254,6 @@ function removeNullsFromSourceData(data) {
     for (let i = data.length - 1; i >= 0; i--)
         if (allValuesAreNull(data[i], keys))
             data.splice(i, 1); // del array element by index
-}
-function findOrFillMissingDatesData(year, dateRange, data, missingData) {
-    let startDate = new Date(year + "-" + dateRange.start);
-    let endDate = new Date(year + "-" + dateRange.end);
-    let missingRange = new DateRange();
-    let missingRanges = [];
-    let priorDate = "";
-    for (; startDate <= endDate; startDate.setDate(startDate.getDate() + 1)) {
-        const date = startDate.toISOString().substring(5, 10);
-        if (date in data) {
-            if (missingData)
-                missingData[date] = data[date];
-            if (missingRange.start) {
-                missingRange.end = priorDate;
-                missingRanges.push(missingRange);
-                missingRange = new DateRange();
-            }
-        }
-        else if (missingRange.start)
-            missingRange.end = date;
-        else
-            missingRange.start = date;
-        priorDate = date;
-    }
-    if (missingRange.start) {
-        if (!missingRange.end)
-            missingRange.end = missingRange.start;
-        missingRanges.push(missingRange);
-    }
-    return missingRanges;
 }
 async function IDBInit() {
     return new Promise((resolve, reject) => {
@@ -352,25 +314,61 @@ async function setStorageItem(stationYear, stationYearStore, from = 'localStorag
         }
     });
 }
-async function fetchStationYearData(stationId, year, start, end) {
+function findOrFillMissingDatesData(year, dateRange, data, missingData) {
+    if (!data || !Object.keys(data).length)
+        return [dateRange]; // If no data, return supplied date range as missing
+    let missingRanges = [];
+    if (missingData && dateRange.end in missingData && ((selectedYears.has(todayYear) && dateRange.end == todayDate)
+        ||
+            (!selectedYears.has(todayYear) && dateRange.end == '12-31')))
+        return missingRanges; // If the end date is in data, return empty array
+    let startDate = new Date(year + "-" + dateRange.start);
+    let endDate = new Date(year + "-" + dateRange.end);
+    let missingRange = new DateRange();
+    let priorDate = "";
+    for (; startDate <= endDate; startDate.setDate(startDate.getDate() + 1)) {
+        const date = startDate.toISOString().substring(5, 10);
+        if (date in data) {
+            if (missingData)
+                missingData[date] = data[date];
+            if (missingRange.start) {
+                missingRange.end = priorDate;
+                missingRanges.push(missingRange);
+                missingRange = new DateRange();
+            }
+        }
+        else if (missingRange.start)
+            missingRange.end = date;
+        else
+            missingRange.start = date;
+        priorDate = date;
+    }
+    if (missingRange.start) {
+        if (!missingRange.end)
+            missingRange.end = missingRange.start;
+        missingRanges.push(missingRange);
+    }
+    return missingRanges;
+}
+async function fetchStationYearData(stationId, year, startDate, endDate) {
     // For the given station ID and year, try to get weather data from local storage, if not present get via API.
-    // Save obtained data into stationsCache object by reference getYearData(stationId, year).
-    let stationYearCache = stationsCache.getStationYearData(stationId, year);
-    let stationYear = stationId + '-' + year;
-    let missingCache = findOrFillMissingDatesData(year, { start, end }, stationYearCache);
+    // Save obtained data into stations cache object by reference getYearData(stationId, year).
+    let stationYearCache = stations.getStationYearData(stationId, year); // Get station year cache reference
+    let missingCache = findOrFillMissingDatesData(year, { start: startDate, end: endDate }, stationYearCache);
     if (!missingCache.length)
         return;
     let missingLocalStorage = [];
+    let stationYear = stationId + '-' + year;
     let stationYearStore = await getStorageItem(stationYear, 'IndexedDB');
     if (Object.keys(stationYearStore).length) {
+        // Populate missing cache from local storage
         for (let missingRange of missingCache)
             missingLocalStorage.push(...findOrFillMissingDatesData(year, missingRange, stationYearStore, stationYearCache));
         if (!missingLocalStorage.length)
-            return;
+            return; // If no missing dates in local storage, exit
     }
     else
         missingLocalStorage = missingCache;
-    warn("Fetching data", 'blink');
     let promises = missingLocalStorage.map(async (missingRange) => {
         let start = year + '-' + missingRange.start;
         let end = year + '-' + missingRange.end;
@@ -392,81 +390,109 @@ async function fetchStationYearData(stationId, year, start, end) {
         }
     });
     await Promise.all(promises);
-    warn("", 'blink');
 }
-async function fetchAllStationsYearData() {
-    // Get weather data for all selectedStations and selectedYears and save them in stationsCache object.
-    const todayDate = today.toISOString().substring(5, 10);
-    const currentYearRequested = selectedYears.has(todayYear);
-    let endDate;
-    if (currentYearRequested)
-        endDate = todayDate;
-    else
-        endDate = "12-31";
+async function fetchData() {
+    // Get weather data for all selectedStations and selectedYears and save them in stations cache object.
     const promises = [];
+    let endDate = selectedYears.has(todayYear) ? todayDate : "12-31";
+    let startDate = "01-01";
     for (const stationId of selectedStations) {
-        for (let year of selectedYears) {
-            let start = "01-01";
-            let end = endDate;
-            promises.push(fetchStationYearData(stationId, year, start, end));
-        }
+        for (let year of selectedYears)
+            promises.push(fetchStationYearData(stationId, year, startDate, endDate));
     }
     try {
+        warn('Fetching data', 'blink');
         await Promise.all(promises);
+        warn('', 'blink');
     }
     catch (error) {
-        console.error("Error fetching stations data:", error);
+        console.error("Error fetching data:", error);
     }
-    return getCommonDatesData();
+    return getCommonDates();
 }
-function getCommonDatesData() {
+function getCommonDates() {
     // Get common dates across all years and their data for each selected station
     // Note: this function assumes that stationsCache has been populated with data
     // for selected stations and years. Yeach year may have different dates, so we
     // need to find the intersection of dates.
-    let stations = {};
+    let stationsCommonDatesArray = {};
+    let stationsCommonDates = {};
+    let allStationsCommonDates = new Set();
+    // Manual reduction of dates for each station
     for (const stationId of selectedStations) {
-        stations[stationId] = Array
-            .from(selectedYears)
-            .map(year => new Set(Object.keys(stationsCache.getStationYearData(stationId, year))))
-            .reduce((acc, cur) => acc.intersection(cur));
+        for (const year of selectedYears) {
+            // Get the weather data for the station and year
+            let dates = stations.getStationYearDataDates(stationId, year);
+            // Initialize or update the station's dates set
+            if (!stationsCommonDates[stationId])
+                stationsCommonDates[stationId] = new Set(dates);
+            else
+                stationsCommonDates[stationId] = stationsCommonDates[stationId].intersection(new Set(dates));
+        }
+        stationsCommonDatesArray[stationId] = Array.from(stationsCommonDates[stationId]).sort(); // Sort the dates
+        if (allStationsCommonDates.size === 0) {
+            // If this is the first station, initialize allStationsCommonDates with its dates
+            allStationsCommonDates = new Set(stationsCommonDates[stationId]);
+        }
+        else {
+            // Otherwise, find the intersection with the existing allStationsCommonDates
+            allStationsCommonDates = allStationsCommonDates.intersection(stationsCommonDates[stationId]);
+        }
     }
     /* Alternative code
-    stationLabel = Object.fromEntries(
-      Array.from(selectedStations).map(stationId => {
-        return [stationId,
-          Array.from(selectedYears)
-            .map(year => new Set(Object.keys(stationsCache.getData(stationId)[year])))
-            .reduce((acc, cur) => acc.intersection(cur))
+    for (const stationId of selectedStations) {
+      stationsCommonDates[stationId] = Array
+        .from(selectedYears)
+        .map(year => new Set(Object.keys(stationsCache.getStationYearData(stationId, year))))
+        .reduce((acc, cur) => acc.intersection(cur));
+    }
+    // Alternative code to get common dates across all selected stations and years
+    stationsCommonDates = Object.fromEntries(
+      Array
+      .from(selectedStations)
+      .map(stationId => {
+        return [stationId, Array
+          .from(selectedYears)
+          .map(year => new Set(Object.keys(stationsCache.getData(stationId)[year])))
+          .reduce((acc, cur) => acc.intersection(cur))
         ];
       })
     );
+    // Alternative code to get common dates across all selected stations and years
+    allStationsCommonDates = Array
+      .from(Object.keys(stationsCommonDates))
+      .map(stationId => stationsCommonDates[stationId])
+      .reduce((acc, cur) => acc.intersection(cur));
     */
-    return stations;
+    return { stationsCommonDates: stationsCommonDatesArray, allStationsCommonDates: Array.from(allStationsCommonDates).sort() };
 }
-function isResearchSelected(event) {
-    if (!event)
-        return true;
+function updateCustomYears() {
+    let years = customInput.value.split(/\s+/).filter(x => x);
+    if (years.some(year => year && (year > todayYear || !year.match(/\d{4}/)))) {
+        warn("Provide valid years");
+        customInput.focus();
+        return false;
+    }
+    customYears = new Set(years);
+    selectedYears = checkedYears.union(customYears);
+    return true;
+}
+function validateSelection() {
+    if (!updateCustomYears())
+        return false;
     selectedStations = checkedBoxes(stationsCheckboxContainer);
     if (!selectedStations.size) {
         warn("Select stations to submit");
         searchTextInput.focus();
         return false;
     }
-    let customYears = customInput.value.split(/\s+/).filter(x => x);
-    if (customYears.some(year => year && (year > todayYear || !year.match(/\d{4}/)))) {
-        warn("Provide valid years");
-        customInput.focus();
-        return false;
-    }
-    selectedYears = checkedBoxes(yearCheckboxContainer).union(new Set(customYears));
     if (selectedYears.size == 0) {
         clearSearchResults(false);
         warn("Select years to submit");
         return false;
     }
-    let thisSubmission = selectedStations.union(selectedYears);
-    thisSubmission.add(allStations.checked.toString());
+    thisSubmission = selectedStations.union(selectedYears);
+    thisSubmission.add(allStations.checked ? 'all' : 'single');
     if (areSetsEqual(thisSubmission, priorSubmission)) {
         warn("Change your selection to submit");
         return false;
@@ -475,7 +501,7 @@ function isResearchSelected(event) {
     return true;
 }
 // Function to set the display state of canvas elements
-function setCanvasDisplay(chartId, state) {
+function setChartVisibility(chartId, state) {
     let iter;
     let display;
     if (typeof state === 'boolean')
@@ -484,36 +510,35 @@ function setCanvasDisplay(chartId, state) {
         display = state;
     if (typeof chartId === 'string')
         iter = [chartId];
-    else if (Array.isArray(chartId))
-        iter = chartId;
     else
         iter = Array.from(chartId);
     let count = 0;
-    for (let chart of iter)
-        if (charts[chart]) {
-            count += 1;
+    iter.forEach(chart => {
+        if (chart in charts) {
             charts[chart].canvas.style.display = display;
+            count += 1;
         }
-    return Object.keys(iter).length === count;
+    });
+    return count == iter.length; // Return true if all canvases were found and set
 }
-function setAllCanvasDisplay() {
-    if (selectedStations.size == 0) {
-        setCanvasDisplay(Object.keys(charts), 'none');
-        return;
-    }
-    let allValue, individualValue;
+function setChartsVisibility() {
+    // Clear unselected canvas elements
+    setChartVisibility(new Set(Object.keys(charts)).difference(selectedStations), 'none');
+    // If all stations are selected, show the single "All Stations" canvas
+    // Otherwise, show single station canvases
+    let allValue, singleValue;
     if (allStations.checked && selectedStations.size > 1) {
         allValue = 'block';
-        individualValue = 'none';
+        singleValue = 'none';
     }
     else {
         allValue = 'none';
-        individualValue = 'block';
+        singleValue = 'block';
     }
-    setCanvasDisplay(allStationsId, allValue);
-    setCanvasDisplay(selectedStations, individualValue);
+    setChartVisibility(selectedStations, singleValue);
+    setChartVisibility(allStationsId, allValue);
 }
-function applyStationSelection(event) {
+async function applyStationSelection(event) {
     warn("");
     let target = event.target;
     let stationId = target.value;
@@ -521,116 +546,82 @@ function applyStationSelection(event) {
         selectedStations.add(stationId);
     else
         selectedStations.delete(stationId);
-    setCanvasDisplay(stationId, target.checked);
-    setAllCanvasDisplay();
-    if (selectedStations.size <= 1)
-        allStations.checked = false;
     populateSelectedStationsNavigationBar();
+    if (selectedStations.size <= 1) {
+        allStations.checked = false;
+        allStations.disabled = true;
+        setChartVisibility(allStationsId, false);
+    }
+    else
+        allStations.disabled = false;
+    await renderChart(event);
 }
-async function switchChartType() {
-    setAllCanvasDisplay();
+async function switchChartType(event) {
     if (selectedStations.size <= 1 && allStations.checked) {
         warn("Select more than one station to show all stations in a single chart");
         allStations.checked = false;
         searchTextInput.focus();
+        return;
     }
     if (selectedStations.size <= 1)
         return;
-    await renderChart();
+    await renderChart(event);
+}
+function deleteUnselectedStationsYears(chart, cachedDataSets) {
+    // remove unselected stations/years from datasets
+    if (chart && ((selectedYears.has(todayYear) && chart.isLastDate(todayDate))
+        ||
+            (!selectedYears.has(todayYear) && chart.isLastDate('12-31'))))
+        for (let i = chart.datasets.length - 1; i >= 0; i--) {
+            let stationId = chart.datasets[i].stationId;
+            let year = chart.datasets[i].year;
+            if (!selectedStations.has(stationId) || !selectedYears.has(year)) {
+                chart.datasets.splice(i, 1); // del array element by index
+            }
+            else {
+                cachedDataSets.add(stationId);
+                cachedDataSets.add(year);
+            }
+        }
 }
 async function getChartData() {
-    let stationsChartData = {};
-    // Get data for selected stations and years
-    let stationsCommonDatesData = await fetchAllStationsYearData();
-    const { [allStationsId]: allStationsChart, ...stationsCharts } = charts;
+    const { [allStationsId]: allChart, ...stationsCharts } = stationsChartData;
     const selectedDatasets = selectedStations.union(selectedYears);
     if (allStations.checked && selectedStations.size > 1) {
-        const cachedDatasets = new Set();
-        if (allStationsChart?.data.datasets.length > 0) {
-            // remove unselected stations/years from datasets
-            const datasets = allStationsChart.data.datasets;
-            for (let i = datasets.length - 1; i >= 0; i--) {
-                let stationId = datasets[i].stationId;
-                let year = datasets[i].year;
-                if (selectedStations.has(stationId) && selectedYears.has(year)) {
-                    cachedDatasets.add(stationId);
-                    cachedDatasets.add(year);
-                    continue;
-                }
-                else
-                    datasets.splice(i, 1); // del array element by index
-            }
-        }
-        if (areSetsEqual(selectedDatasets, cachedDatasets))
-            stationsChartData[allStationsId] = allStationsChart.data;
-        else {
-            // Get common dates across all stations
-            const labels = Array.from(Object.values(stationsCommonDatesData).reduce((acc, cur) => acc.intersection(cur))).sort();
-            stationsChartData[allStationsId] = {
-                labels,
-                // For each selected station, create datasets for each selected year
-                // The flatMap ensures that all datasets for all years and stations are returned as a single, flat array,
-                // which is useful for charting libraries that expect a list of datasets rather than a nested array structure.
-                // This approach efficiently prepares the data needed to visualize temperature trends for multiple stations and years in a chart.
-                datasets: Array
-                    .from(selectedStations)
-                    .flatMap(stationId => {
-                    // Remove punctuation and whitespace characters, and everything after them, from the station name
-                    let name = stationsCache.getNameOrId(stationId).replace(/[\p{P}\p{Z}]+.*$/gu, "");
-                    return Array.from(selectedYears).map((year) => newChartDataset({ stationId, year, label: name + "-" + year, dates: labels }));
-                }),
-            };
+        const cachedDataSets = new Set();
+        deleteUnselectedStationsYears(allChart, cachedDataSets);
+        // Get data for newly selected stations and years
+        if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
+            let { allStationsCommonDates } = await fetchData();
+            stationsChartData[allStationsId] = new ChartData({ stationId: allStationsId, dates: allStationsCommonDates });
         }
     }
     else {
-        let cachedDatasets = new Set();
-        for (let [stationId, chart] of Object.entries(stationsCharts)) {
-            stationsChartData[stationId] = chart.data;
-            cachedDatasets = cachedDatasets.add(stationId).union(new Set(chart.data.datasets.map(dataset => dataset.label)));
-        }
-        if (!areSetsEqual(selectedDatasets, cachedDatasets)) {
-            for (const stationId of selectedStations) {
-                let labels = Array.from(stationsCommonDatesData[stationId]).sort();
-                let chartData = {
-                    labels,
-                    // datasets: Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: year, dates: labels })),
-                    datasets: Array.from(selectedYears).map(year => newChartDataset({ stationId, year, label: getRGBValue(stationId, year), dates: labels })),
-                };
-                stationsChartData[stationId] = chartData;
-            }
+        // Check if the datasets for selected stations and years are already rendered
+        let cachedDataSets = new Set();
+        for (let chart of Object.values(stationsCharts))
+            deleteUnselectedStationsYears(chart, cachedDataSets);
+        // Get data for newly selected stations and years
+        if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
+            let { stationsCommonDates } = await fetchData();
+            for (const stationId of selectedStations)
+                stationsChartData[stationId] = new ChartData({ stationId, dates: stationsCommonDates[stationId] });
         }
     }
-    return stationsChartData;
+    priorSubmissionYear = thisSubmission;
 }
-function newChartDataset({ stationId, year, label, dates }) {
-    let rgb;
-    let dataset = {
-        label,
-        data: dates.map(date => stationsCache.getStationYearWeatherParameters(stationId, year, date)?.tmax),
-    };
-    if (label == year) {
-        rgb = getRGBValue('27500', year);
-    }
-    else {
-        rgb = getRGBValue(stationId, year);
-        // Additional properties for all stations chart
-        dataset.stationId = stationId;
-        dataset.year = year;
-    }
-    dataset.borderColor = rgb;
-    dataset.backgroundColor = rgb;
-    return dataset;
-}
-async function renderChart(event = undefined) {
-    if (!isResearchSelected(event))
-        return;
-    setAllCanvasDisplay();
+async function renderChart(event) {
+    event.preventDefault();
     clearSearchResults(false);
+    if (!validateSelection())
+        return;
+    await getChartData();
+    warn('Rendering', 'blink');
     if (!canvasContainer)
         throw new Error('Canvas container is missing');
-    const stationsChartData = await getChartData();
-    for (let [stationId, chart] of Object.entries(stationsChartData).sort(([a,], [b,]) => stationsCache.getNameOrId(a).localeCompare(stationsCache.getNameOrId(b)))) {
-        let title = ['Historic Daily High Air Temperature in ' + stationsCache.getNameOrId(stationId)];
+    for (let stationId of allStations.checked ? [allStationsId] : selectedStations) {
+        let chart = stationsChartData[stationId];
+        let title = ['Historic Daily High Air Temperature for ' + stations.getNameOrId(stationId)];
         if (chart.datasets.length > 1)
             title.push('Click on the legend icon to deselect/reselect the graph');
         const options = {
@@ -647,18 +638,19 @@ async function renderChart(event = undefined) {
             charts[stationId].options = options; // Update chart's options
             charts[stationId].data = chart; // Update chart's data
             charts[stationId].update(); // Refresh the chart
+            continue;
         }
-        else {
-            const canvas = document.createElement("canvas");
-            canvas.setAttribute('id', `canvas-${stationId}`);
-            canvasContainer.appendChild(canvas);
-            charts[stationId] = new Chart(canvas, {
-                type: "line",
-                options,
-                data: chart,
-            });
-        }
+        const canvas = document.createElement("canvas");
+        canvas.setAttribute('id', `canvas-${stationId}`);
+        canvasContainer.appendChild(canvas);
+        charts[stationId] = new Chart(canvas, {
+            type: "line",
+            options,
+            data: chart,
+        });
     }
+    setChartsVisibility();
+    warn('', 'blink');
 }
 function createCheckboxesForSelectedStations() {
     if (selectedLocation)
@@ -666,7 +658,7 @@ function createCheckboxesForSelectedStations() {
     if (stationsCheckboxContainer) {
         // Recreate checkboxes in sorted order every time a new element is inserted.
         stationsCheckboxContainer.innerHTML = '';
-        stationsCache.getSortedArrayBy('name').forEach(([id, { name }]) => {
+        stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
             let stationCheckboxId = 'station-checkbox-' + id;
             const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
             let checkbox = document.createElement("input");
@@ -690,7 +682,7 @@ function createCheckboxesForSelectedStations1() {
     if (stationsCheckboxContainer) {
         // Recreate checkboxes in sorted order every time a new element is inserted.
         stationsCheckboxContainer.innerHTML = '';
-        stationsCache.getSortedArrayBy('name').forEach(([id, { name }]) => {
+        stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
             let stationCheckboxId = 'station-checkbox-' + id;
             const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
             let checkbox = document.createElement("input");
@@ -713,7 +705,6 @@ function createCheckboxesForSelectedStations1() {
 }
 function createYearSelection() {
     // Create checkboxes for the last 10 years
-    const currentYear = new Date().getFullYear();
     for (let i = 9; i >= 0; i--) {
         const year = currentYear - i;
         const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
@@ -731,6 +722,12 @@ function createYearSelection() {
         // Append the checkbox item to the checkbox container
         yearCheckboxContainer?.appendChild(checkboxItem);
     }
+    yearCheckboxContainer.addEventListener('change', updateCheckedYears);
+}
+async function updateCheckedYears(event) {
+    checkedYears = checkedBoxes(yearCheckboxContainer);
+    selectedYears = checkedYears.union(customYears);
+    await renderChart(event);
 }
 function warn(message, cls = '') {
     submissionWarning.textContent = message;
@@ -756,7 +753,7 @@ function appendStationWithFlag(element, stationId, name = '', country = '') {
     // Need to use NS (Name Space) version of the createElement for dynamic SVG to work
     if (!element || !stationId)
         return;
-    country ||= stationsCache.getCountry(stationId);
+    country ||= stations.getCountry(stationId);
     if (country) {
         country = country.toLowerCase();
         const eSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -767,7 +764,7 @@ function appendStationWithFlag(element, stationId, name = '', country = '') {
         element.appendChild(eSVG);
     }
     const eName = document.createElement("span");
-    eName.textContent = name || stationsCache.getNameOrId(stationId);
+    eName.textContent = name || stations.getNameOrId(stationId);
     element.appendChild(eName);
 }
 function populateSelectedStationsNavigationBar() {
@@ -776,18 +773,16 @@ function populateSelectedStationsNavigationBar() {
         return;
     }
     selectedLocation.innerHTML = '';
-    for (let [id, { name, country }] of stationsCache.getStations(selectedStations).getSortedArrayBy('name')) {
+    for (let [id, { name, country }] of stations.getStations(selectedStations).getSortedArrayBy('name')) {
         appendStationWithFlag(selectedLocation, id, name, country);
     }
 }
 async function populateSearchResults(searchString) {
     if (updatingSearchResults)
         return;
-    if (searchString.length <= 2) {
-        clearSearchResults(false);
-        return;
-    }
     clearSearchResults(false);
+    if (searchString.length <= 2)
+        return;
     updatingSearchResults = true;
     const url = autoCompleteURLTemplate.formatUnicorn({ location: searchString, locale: $locale });
     let data = {};
@@ -821,6 +816,7 @@ async function populateSearchResults(searchString) {
     }
     async function selectClickedLocation(event) {
         // This refers to the clicked element
+        clearSearchResults(false);
         event.preventDefault(); // Prevent the default action (navigation)
         let id = this.getAttribute('data-id');
         let name = this.getAttribute('data-name');
@@ -837,9 +833,10 @@ async function populateSearchResults(searchString) {
             // Destructure directly into "station" object
             ({ data: { id, name } } = await fetchJson(nearbyStationURL));
         }
-        stationsCache.upsert(id, new Station({ name, country, region, active }));
+        stations.upsert(id, new Station({ name, country, region, active }));
         selectedStations.add(id);
         createCheckboxesForSelectedStations();
+        applyStationSelection(event); // Apply selection to the checkboxes
     }
     // Add Places
     // Cannot use places because there is no API to find the nearest station
@@ -938,26 +935,34 @@ const magnifyingGlass = document.getElementById('magnifyingGlass');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const allStations = document.getElementById("all-stations");
 // Main Listeners
-document.getElementById("input-form")?.addEventListener('submit', event => { event.preventDefault(); renderChart(event); });
+document.getElementById("input-form")?.addEventListener('submit', renderChart);
 stationsCheckboxContainer.addEventListener('change', applyStationSelection);
 allStations.addEventListener('change', switchChartType);
 searchTextInput.addEventListener("input", async function () { await populateSearchResults(this.value); });
+searchTextInput.addEventListener("focus", async function () { await populateSearchResults(this.value); });
 // Script Variables
 const idbName = 'WeatherStationDB';
 const storeName = 'StationYearStore';
 const allStationsId = 'all stations';
 const abortController = new AbortController();
 const today = new Date();
-const todayYear = today.getFullYear().toString();
-const stationsCache = new Stations();
+const currentYear = today.getFullYear();
+const todayYear = currentYear.toString();
+const todayDate = today.toISOString().substring(5, 10);
 let selectedStations = new Set();
 let selectedYears = new Set();
+let checkedYears = new Set();
+let customYears = new Set();
+let thisSubmission = new Set();
 let priorSubmission = new Set();
+let priorSubmissionYear = new Set();
 const charts = {};
+const stations = new Stations();
+const stationsChartData = {};
 let updatingSearchResults = false;
 let idxDB;
 // main()
-window.addEventListener('load', async () => {
+document.addEventListener('DOMContentLoaded', async function () {
     await IDBInit();
     clearSearchResults();
     populateSelectedStationsNavigationBar();
