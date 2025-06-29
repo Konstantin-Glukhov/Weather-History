@@ -49,7 +49,17 @@
         <div class="selected-years-container">
           <h6>Select Years to Plot Daily High Air Temperatures</h6>
           <div id="years-checkboxes" class="background-blue checkbox-container checkbox-container-year"></div>
-          <button type="submit" class="background-blue">Submit</button>
+          <div id="weather-param-checkboxes" class="row-container">
+            <div>
+              <input type="checkbox" id="dailyHigh" value="tmax" checked>
+              <label for="dailyHigh">Daily High</label>
+            </div>
+            <button type="submit" class="background-blue">Submit</button>
+            <div>
+              <input type="checkbox" id="dailyLow" value="tmin" checked>
+              <label for="dailyLow">Daily Low</label>
+            </div>
+          </div>
           <div class="background-blue" style="visibility: hidden;">
             <span id="submissionWarning" class="warning"></span>
           </div>
