@@ -981,6 +981,7 @@ function populateSelectedStationsNavigationBar() {
 }
 
 async function populateSearchResults(searchString: string): Promise<void> {
+  searchTextInput.value = searchString; // Set the input value to the search string
   if (updatingSearchResults) return;
   clearSearchResults(false);
   if (searchString.length <= 2)
@@ -1170,4 +1171,13 @@ document.addEventListener('DOMContentLoaded', async function () {
   clearSearchResults();
   populateSelectedStationsNavigationBar();
   createYearSelection();
+  // Fetch the city from the IP API and set it as the search input value
+  const ipApiUrl = 'https://ipapi.co/json';
+  try {
+    const { city } = await fetchJson(ipApiUrl);
+    if (city) populateSearchResults(city);
+    else console.warn('City not found in IP API response');
+  } catch (err) {
+    console.error('Failed to fetch IP info:', err);
+  }
 });
