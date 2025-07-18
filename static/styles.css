@@ -17,34 +17,10 @@ textarea {
     inset 0px 0px 20px 5px lightskyblue;
 }
 
-.row-container {
-  display: flex;
-  justify-content: space-between;
-  /* Spreads items equally */
-  align-items: center;
-  /* Vertically aligns them */
-  gap: 3rem;
-  /* Optional spacing between items */
-}
-
 .container-np {
   padding-right: 0;
   padding-left: 0;
-}
-
-.background-blue {
-  box-shadow: 0px 0px 20px 5px lightskyblue;
-  background-color: rgba(135, 206, 250, 0.66);
-  /* LightSkyBlue with 66% opacity */
-  border-radius: 1em;
-  margin-top: 2%;
-  white-space: nowrap;
-}
-
-.warning {
-  display: flex;
-  color: crimson;
-  height: 1.5em;
+  gap: 2rem;
 }
 
 button {
@@ -77,16 +53,45 @@ svg>image {
   transform-origin: 0px 0px;
 }
 
-.selected-stations-container {
-  min-width: 25%;
-  visibility: hidden;
+.bg-blue {
+  box-shadow: 0px 0px 20px 5px lightskyblue;
+  background-color: rgba(135, 206, 250, 0.66);
+  /* LightSkyBlue with 66% opacity */
+  border-radius: 1em;
+  margin-top: 2%;
+  white-space: nowrap;
+}
+
+.row-container {
+  display: flex;
+  /* justify-content: space-between; */
+  /* Spreads items equally */
+  align-items: center;
+  /* Vertically aligns them */
+  gap: 3rem;
+  /* Optional spacing between items */
+}
+
+.stations-container {
+  display: flex;
+  gap: 1rem;
+  /* padding: 1rem; */
+  border-radius: 8px;
+  box-shadow: 0px 0px 20px 5px rgba(255, 166, 0, 0.5);
+  background-color: rgba(255, 166, 0, 0.3);
+}
+
+.stations-container>* {
+  box-shadow: none;
+  background-color: transparent;
+  /* make sure children are transparent */
 }
 
 .checkbox-year>label {
   margin-left: 5%;
 }
 
-.selected-years-container {
+.years-container {
   display: flex;
   min-width: 33%;
   flex-direction: column;
@@ -96,7 +101,7 @@ svg>image {
 .input-container {
   display: flex;
   width: 100%;
-  justify-content: center;
+  padding-left: 30%;
 }
 
 .checkbox-container {
@@ -129,14 +134,21 @@ svg>image {
   vertical-align: -0.125em;
 }
 
-.blink {
-  animation: blinker 0.5s linear infinite;
+.warning {
+  /* display: flex; */
+  color: crimson;
+  height: 1.5em;
 }
 
 @keyframes blinker {
   50% {
     opacity: 0;
   }
+}
+
+.blink {
+  text-align: center;
+  animation: blinker 0.5s linear infinite;
 }
 
 .spinner {
@@ -179,7 +191,7 @@ svg>image {
 
 @media (min-width: 576px) {
   .navbar .search {
-    min-width: 10%;
+    min-width: 30%;
   }
 }
 

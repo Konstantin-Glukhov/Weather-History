@@ -29,45 +29,36 @@
         </div>
       </div>
       <div class="collapse navbar-collapse ms-3">
-        <div class="ms-auto btn btn-light">
-          Weather Stations:
-        </div>
-        <div id="selectedLocation">
-          <svg>
-            <image></image>
-          </svg>
-          <span></span>
+        <div class="stations-container" style="visibility: hidden;">
+          <h6>Weather Stations</h6>
+          <div id="stationsCheckboxContainer" class="stations-container"></div>
         </div>
       </div>
     </nav>
     <form id="input-form">
       <div class="input-container">
-        <div class="selected-stations-container">
-          <h6>Select Weather Stations</h6>
-          <div id="stations-checkboxes" class="background-blue checkbox-container-station"></div>
-        </div>
-        <div class="selected-years-container">
+        <div class="years-container">
           <h6>Select Years to Plot Daily High Air Temperatures</h6>
-          <div id="years-checkboxes" class="background-blue checkbox-container checkbox-container-year"></div>
+          <div id="yearsCheckboxContainer" class="bg-blue checkbox-container checkbox-container-year"></div>
           <div id="weather-param-checkboxes" class="row-container">
             <div>
               <input type="checkbox" id="dailyHigh" value="tmax" checked>
               <label for="dailyHigh">Daily High</label>
             </div>
-            <button type="submit" class="background-blue">Submit</button>
+            <button type="submit" class="bg-blue">Submit</button>
             <div>
               <input type="checkbox" id="dailyLow" value="tmin" checked>
               <label for="dailyLow">Daily Low</label>
             </div>
           </div>
-          <div class="background-blue" style="visibility: hidden;">
+          <div class="bg-blue" style="visibility: hidden;">
             <span id="submissionWarning" class="warning"></span>
           </div>
         </div>
         <div>
           <div>
             <h6>Enter Years Manually</h6>
-            <textarea id="customInput"></textarea>
+            <textarea id="customInput" style="margin-top: 2%;"></textarea>
           </div>
           <div class="checkbox-container-all-stations">
             <input type="checkbox" id="all-stations" disabled>
@@ -83,5 +74,4 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="../dist/historicTemperatures.js"></script>
 </body>
-
 </html>

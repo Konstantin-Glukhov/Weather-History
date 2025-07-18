@@ -650,7 +650,6 @@ async function applyStationSelection(event) {
         selectedStations.add(stationId);
     else
         selectedStations.delete(stationId);
-    populateSelectedStationsNavigationBar();
     if (selectedStations.size <= 1) {
         allStations.checked = false;
         allStations.disabled = true;
@@ -763,57 +762,6 @@ async function renderChart(event) {
     setChartVisibility(selectedCharts, 'block');
     warn('');
 }
-function createCheckboxesForSelectedStations() {
-    if (selectedLocation)
-        selectedLocation.innerHTML = '';
-    if (stationsCheckboxContainer) {
-        // Recreate checkboxes in sorted order every time a new element is inserted.
-        stationsCheckboxContainer.innerHTML = '';
-        stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
-            let stationCheckboxId = 'station-checkbox-' + id;
-            const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
-            let checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.id = stationCheckboxId;
-            checkbox.value = id;
-            checkbox.checked = selectedStations.has(id);
-            // Append the checkbox and label to the checkbox item
-            checkboxItem.appendChild(checkbox);
-            appendStationWithFlag(checkboxItem, id);
-            // Append the checkbox item to the checkbox container
-            stationsCheckboxContainer.appendChild(checkboxItem);
-        });
-        populateSelectedStationsNavigationBar();
-        stationsCheckboxContainer.parentElement.style.visibility = 'visible';
-    }
-}
-function createCheckboxesForSelectedStations1() {
-    if (selectedLocation)
-        selectedLocation.innerHTML = '';
-    if (stationsCheckboxContainer) {
-        // Recreate checkboxes in sorted order every time a new element is inserted.
-        stationsCheckboxContainer.innerHTML = '';
-        stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
-            let stationCheckboxId = 'station-checkbox-' + id;
-            const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
-            let checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.id = stationCheckboxId;
-            checkbox.value = id;
-            checkbox.checked = selectedStations.has(id);
-            const label = document.createElement("label");
-            label.htmlFor = stationCheckboxId;
-            label.innerText = `${name} (${id})`;
-            // Append the checkbox and label to the checkbox item
-            checkboxItem.appendChild(checkbox);
-            checkboxItem.appendChild(label);
-            // Append the checkbox item to the checkbox container
-            stationsCheckboxContainer.appendChild(checkboxItem);
-        });
-        populateSelectedStationsNavigationBar();
-        stationsCheckboxContainer.parentElement.style.visibility = 'visible';
-    }
-}
 function createYearSelection() {
     // Create checkboxes for the last 10 years
     for (let i = 9; i >= 0; i--) {
@@ -831,12 +779,12 @@ function createYearSelection() {
         checkboxItem.appendChild(checkbox);
         checkboxItem.appendChild(label);
         // Append the checkbox item to the checkbox container
-        yearCheckboxContainer?.appendChild(checkboxItem);
+        yearsCheckboxContainer?.appendChild(checkboxItem);
     }
-    yearCheckboxContainer.addEventListener('change', updateSelectedYears);
+    yearsCheckboxContainer.addEventListener('change', updateSelectedYears);
 }
 async function updateSelectedYears(event) {
-    getCheckedBoxes(yearCheckboxContainer, selectedYears);
+    getCheckedBoxes(yearsCheckboxContainer, selectedYears);
     await renderChart(event);
 }
 function warn(message, cls = '') {
@@ -879,15 +827,27 @@ function appendStationWithFlag(element, stationId, name = '', country = '') {
     eName.textContent = name || stations.getNameOrId(stationId);
     element.appendChild(eName);
 }
-function populateSelectedStationsNavigationBar() {
-    if (!selectedStations.size) {
-        selectedLocation.innerHTML = '<span style="margin-left: 1em;">Not Set</span>';
+function createStationsCheckboxes() {
+    if (!stationsCheckboxContainer)
         return;
+    // Recreate checkboxes in sorted order every time a new element is inserted.
+    stationsCheckboxContainer.innerHTML = '';
+    for (let [id, { name, country }] of stations.getSortedArrayBy('name')) {
+        let stationCheckboxId = 'station-checkbox-' + id;
+        const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
+        let checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = stationCheckboxId;
+        checkbox.value = id;
+        checkbox.checked = selectedStations.has(id);
+        // Append the checkbox and label to the checkbox item
+        checkboxItem.appendChild(checkbox);
+        appendStationWithFlag(checkboxItem, id);
+        // Append the checkbox item to the checkbox container
+        stationsCheckboxContainer.appendChild(checkboxItem);
     }
-    selectedLocation.innerHTML = '';
-    for (let [id, { name, country }] of stations.getStations(selectedStations).getSortedArrayBy('name')) {
-        appendStationWithFlag(selectedLocation, id, name, country);
-    }
+    ;
+    stationsCheckboxContainer.parentElement.style.visibility = 'visible';
 }
 async function populateSearchResults(searchString) {
     searchTextInput.value = searchString; // Set the input value to the search string
@@ -928,7 +888,7 @@ async function populateSearchResults(searchString) {
         container.appendChild(header);
     }
     async function selectClickedLocation(event) {
-        // This refers to the clicked element
+        // this refers to the clicked element
         clearSearchResults(false);
         event.preventDefault(); // Prevent the default action (navigation)
         let id = this.getAttribute('data-id');
@@ -948,7 +908,7 @@ async function populateSearchResults(searchString) {
         }
         stations.upsert(id, new Station({ name, country, region, active }));
         selectedStations.add(id);
-        createCheckboxesForSelectedStations();
+        createStationsCheckboxes();
         applyStationSelection(event); // Apply selection to the checkboxes
         searchTextInput.focus();
     }
@@ -1032,8 +992,8 @@ const searchTextInput = document.getElementById("search");
 const placesSearchContainer = document.getElementById('places-search-container');
 const stationsSearchContainer = document.getElementById('stations-search-container');
 const selectedLocation = document.getElementById("selectedLocation");
-const stationsCheckboxContainer = document.getElementById("stations-checkboxes");
-const yearCheckboxContainer = document.getElementById("years-checkboxes");
+const stationsCheckboxContainer = document.getElementById("stationsCheckboxContainer");
+const yearsCheckboxContainer = document.getElementById("yearsCheckboxContainer");
 const weatherParamContainer = document.getElementById("weather-param-checkboxes");
 const customInput = document.getElementById("customInput");
 const submissionWarning = document.getElementById("submissionWarning");
@@ -1047,11 +1007,13 @@ weatherParamContainer.addEventListener('change', renderChart);
 stationsCheckboxContainer.addEventListener('change', applyStationSelection);
 allStations.addEventListener('change', switchChartType);
 searchTextInput.addEventListener("input", async function () { await populateSearchResults(this.value); });
-searchTextInput.addEventListener('keydown', function (event) {
+// searchTextInput.addEventListener("focus", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
+// searchTextInput.addEventListener("blur", async function () { clearSearchResults(false); });
+searchTextInput.addEventListener('keydown', async function (event) {
     if (event.key === 'Escape')
         clearSearchResults();
     if (event.key === 'Enter' && document.activeElement === searchTextInput)
-        populateSearchResults(searchTextInput.value);
+        await populateSearchResults(searchTextInput.value);
 });
 // Script Variables
 const idbName = 'WeatherStationDB';
@@ -1079,7 +1041,6 @@ let idxDB;
 document.addEventListener('DOMContentLoaded', async function () {
     await IDBInit();
     clearSearchResults();
-    populateSelectedStationsNavigationBar();
     createYearSelection();
     // Fetch the city from the IP API and set it as the search input value
     const ipApiUrl = 'https://ipapi.co/json';

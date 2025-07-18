@@ -735,7 +735,6 @@ async function applyStationSelection(event: Event) {
   let stationId = target.value;
   if (target.checked) selectedStations.add(stationId);
   else selectedStations.delete(stationId);
-  populateSelectedStationsNavigationBar();
   if (selectedStations.size <= 1) {
     allStations.checked = false;
     allStations.disabled = true;
@@ -849,56 +848,6 @@ async function renderChart(event: Event): Promise<void> {
   warn('');
 }
 
-function createCheckboxesForSelectedStations(): void {
-  if (selectedLocation) selectedLocation.innerHTML = '';
-  if (stationsCheckboxContainer) {
-    // Recreate checkboxes in sorted order every time a new element is inserted.
-    stationsCheckboxContainer.innerHTML = '';
-    stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
-      let stationCheckboxId = 'station-checkbox-' + id;
-      const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
-      let checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.id = stationCheckboxId;
-      checkbox.value = id;
-      checkbox.checked = selectedStations.has(id);
-      // Append the checkbox and label to the checkbox item
-      checkboxItem.appendChild(checkbox);
-      appendStationWithFlag(checkboxItem, id);
-      // Append the checkbox item to the checkbox container
-      stationsCheckboxContainer.appendChild(checkboxItem);
-    });
-    populateSelectedStationsNavigationBar();
-    stationsCheckboxContainer.parentElement!.style.visibility = 'visible';
-  }
-}
-function createCheckboxesForSelectedStations1(): void {
-  if (selectedLocation) selectedLocation.innerHTML = '';
-  if (stationsCheckboxContainer) {
-    // Recreate checkboxes in sorted order every time a new element is inserted.
-    stationsCheckboxContainer.innerHTML = '';
-    stations.getSortedArrayBy('name').forEach(([id, { name }]) => {
-      let stationCheckboxId = 'station-checkbox-' + id;
-      const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
-      let checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.id = stationCheckboxId;
-      checkbox.value = id;
-      checkbox.checked = selectedStations.has(id);
-      const label = document.createElement("label");
-      label.htmlFor = stationCheckboxId;
-      label.innerText = `${name} (${id})`;
-      // Append the checkbox and label to the checkbox item
-      checkboxItem.appendChild(checkbox);
-      checkboxItem.appendChild(label);
-      // Append the checkbox item to the checkbox container
-      stationsCheckboxContainer.appendChild(checkboxItem);
-    });
-    populateSelectedStationsNavigationBar();
-    stationsCheckboxContainer.parentElement!.style.visibility = 'visible';
-  }
-}
-
 function createYearSelection(): void {
   // Create checkboxes for the last 10 years
   for (let i = 9; i >= 0; i--) {
@@ -920,13 +869,13 @@ function createYearSelection(): void {
     checkboxItem.appendChild(label);
 
     // Append the checkbox item to the checkbox container
-    yearCheckboxContainer?.appendChild(checkboxItem);
+    yearsCheckboxContainer?.appendChild(checkboxItem);
   }
-  yearCheckboxContainer.addEventListener('change', updateSelectedYears);
+  yearsCheckboxContainer.addEventListener('change', updateSelectedYears);
 }
 
 async function updateSelectedYears(event: Event): Promise<void> {
-  getCheckedBoxes(yearCheckboxContainer, selectedYears);
+  getCheckedBoxes(yearsCheckboxContainer, selectedYears);
   await renderChart(event);
 }
 
@@ -969,15 +918,25 @@ function appendStationWithFlag(element: HTMLElement, stationId: string, name: st
   element.appendChild(eName);
 }
 
-function populateSelectedStationsNavigationBar() {
-  if (!selectedStations.size) {
-    selectedLocation.innerHTML = '<span style="margin-left: 1em;">Not Set</span>';
-    return;
-  }
-  selectedLocation.innerHTML = '';
-  for (let [id, { name, country }] of stations.getStations(selectedStations).getSortedArrayBy('name')) {
-    appendStationWithFlag(selectedLocation, id, name, country);
-  }
+function createStationsCheckboxes(): void {
+  if (!stationsCheckboxContainer) return;
+  // Recreate checkboxes in sorted order every time a new element is inserted.
+  stationsCheckboxContainer.innerHTML = '';
+  for (let [id, { name, country }] of stations.getSortedArrayBy('name')) {
+    let stationCheckboxId = 'station-checkbox-' + id;
+    const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
+    let checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = stationCheckboxId;
+    checkbox.value = id;
+    checkbox.checked = selectedStations.has(id);
+    // Append the checkbox and label to the checkbox item
+    checkboxItem.appendChild(checkbox);
+    appendStationWithFlag(checkboxItem, id);
+    // Append the checkbox item to the checkbox container
+    stationsCheckboxContainer.appendChild(checkboxItem);
+  };
+  stationsCheckboxContainer.parentElement!.style.visibility = 'visible';
 }
 
 async function populateSearchResults(searchString: string): Promise<void> {
@@ -1020,7 +979,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
   }
 
   async function selectClickedLocation(this: HTMLElement, event: MouseEvent): Promise<void> {
-    // This refers to the clicked element
+    // this refers to the clicked element
     clearSearchResults(false);
     event.preventDefault(); // Prevent the default action (navigation)
     let id: string | null = this.getAttribute('data-id');
@@ -1040,7 +999,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
     }
     stations.upsert(id, new Station({ name, country, region, active }));
     selectedStations.add(id);
-    createCheckboxesForSelectedStations();
+    createStationsCheckboxes();
     applyStationSelection(event); // Apply selection to the checkboxes
     searchTextInput.focus();
   }
@@ -1121,8 +1080,8 @@ const searchTextInput = document.getElementById("search") as HTMLInputElement;
 const placesSearchContainer = document.getElementById('places-search-container') as HTMLDivElement;
 const stationsSearchContainer = document.getElementById('stations-search-container') as HTMLDivElement;
 const selectedLocation = document.getElementById("selectedLocation") as HTMLDivElement;
-const stationsCheckboxContainer = document.getElementById("stations-checkboxes") as HTMLDivElement;
-const yearCheckboxContainer = document.getElementById("years-checkboxes") as HTMLDivElement;
+const stationsCheckboxContainer = document.getElementById("stationsCheckboxContainer") as HTMLDivElement;
+const yearsCheckboxContainer = document.getElementById("yearsCheckboxContainer") as HTMLDivElement;
 const weatherParamContainer = document.getElementById("weather-param-checkboxes") as HTMLDivElement;
 const customInput = document.getElementById("customInput") as HTMLTextAreaElement;
 const submissionWarning = document.getElementById("submissionWarning") as HTMLSpanElement;
@@ -1136,9 +1095,11 @@ weatherParamContainer.addEventListener('change', renderChart);
 stationsCheckboxContainer.addEventListener('change', applyStationSelection);
 allStations.addEventListener('change', switchChartType);
 searchTextInput.addEventListener("input", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
-searchTextInput.addEventListener('keydown', function (event) {
+// searchTextInput.addEventListener("focus", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
+// searchTextInput.addEventListener("blur", async function () { clearSearchResults(false); });
+searchTextInput.addEventListener('keydown', async function (event) {
   if (event.key === 'Escape') clearSearchResults();
-  if (event.key === 'Enter' && document.activeElement === searchTextInput) populateSearchResults(searchTextInput.value);
+  if (event.key === 'Enter' && document.activeElement === searchTextInput) await populateSearchResults(searchTextInput.value);
 });
 // Script Variables
 const idbName = 'WeatherStationDB';
@@ -1169,7 +1130,6 @@ let idxDB: IDBDatabase;
 document.addEventListener('DOMContentLoaded', async function () {
   await IDBInit();
   clearSearchResults();
-  populateSelectedStationsNavigationBar();
   createYearSelection();
   // Fetch the city from the IP API and set it as the search input value
   const ipApiUrl = 'https://ipapi.co/json';
