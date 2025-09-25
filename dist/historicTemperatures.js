@@ -248,6 +248,8 @@ function getRGBValue(stationId, year) {
     // station ID and year.
     const str = `${stationId}-${year}`;
     let hash = 0;
+    const yearNum = parseInt(year, 10);
+    // Applying djb2 hash algorithm to the input string
     for (let i = 0; i < str.length; i++) {
         hash = ((hash << 5) - hash) + str.charCodeAt(i);
         hash |= 0;
@@ -256,11 +258,17 @@ function getRGBValue(stationId, year) {
     hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
     hash = ((hash >> 16) ^ hash) * 0x45d9f3b;
     hash = (hash >> 16) ^ hash;
-    // Extract RGB
+    // Introduce more variability between year and station
     const r = (hash & 0xFF0000) >> 16;
     const g = (hash & 0x00FF00) >> 8;
     const b = (hash & 0x0000FF);
-    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+    // Apply small variations to ensure perceptible differences
+    // Increase the range of each channel slightly
+    const adjustedR = (r + (yearNum % 256)) % 256;
+    const adjustedG = (g + ((yearNum * 2) % 256)) % 256;
+    const adjustedB = (b + ((stationId.length * 5) % 256)) % 256;
+    // Return the color as hex code
+    return `#${((1 << 24) + (adjustedR << 16) + (adjustedG << 8) + adjustedB).toString(16).slice(1).toUpperCase()}`;
 }
 async function fetchJson(url, options = {}) {
     const res = await fetch(url, options);
