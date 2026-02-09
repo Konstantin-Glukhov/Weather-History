@@ -10,5 +10,7 @@
     "clean": "rm -ErrorAction SilentlyContinue -Force -Recurse dist"
   },
   "author": "Konstantin Glukhov",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+  }
 }

@@ -22,6 +22,24 @@ class WeatherParameters {
     }
 }
 ;
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get("Content-Type");
+    let json;
+    if (contentType?.includes("application/json")) {
+        json = await res.json();
+    }
+    else if (contentType?.includes("text/")) {
+        const text = await res.text();
+        json = JSON.parse(text);
+    }
+    else
+        throw new Error("Unsupported content type: " + contentType);
+    return json;
+}
+async function fetchIPinfo() {
+    return await fetchJson('https://ipapi.co/json');
+}
 function removeNullsFromSourceData(data) {
     // remove array elements with all null parameters
     if (!data.length)
@@ -218,17 +236,11 @@ class Stations {
         return this[id]?.country;
     }
 }
-String.prototype.formatUnicorn = function (...args) {
-    if (!args.length)
-        return "";
-    const [params] = args;
-    let str = this;
-    for (const key of Object.keys(params)) {
-        const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
-        str = str.replace(regex, params[key]);
-    }
-    return str.trim();
-};
+function formatUnicorn(str, params) {
+    return str.replace(/\$\{([^}]+)\}/g, (_, key) => {
+        return key in params ? params[key] : '';
+    }).trim();
+}
 function getRGBValue(stationId, year) {
     // This function uses both the station ID and year as a string, so even small
     // changes(like a different year) will result in a very different color.  The
@@ -269,21 +281,6 @@ function getRGBValue(stationId, year) {
     const adjustedB = (b + ((stationId.length * 5) % 256)) % 256;
     // Return the color as hex code
     return `#${((1 << 24) + (adjustedR << 16) + (adjustedG << 8) + adjustedB).toString(16).slice(1).toUpperCase()}`;
-}
-async function fetchJson(url, options = {}) {
-    const res = await fetch(url, options);
-    const contentType = res.headers.get("Content-Type");
-    let json;
-    if (contentType?.includes("application/json")) {
-        json = await res.json();
-    }
-    else if (contentType?.includes("text/")) {
-        const text = await res.text();
-        json = JSON.parse(text);
-    }
-    else
-        throw new Error("Unsupported content type: " + contentType);
-    return json;
 }
 function allValuesAreMissing(obj, keys = []) {
     // Return true if all values for the given set of keys are null
@@ -493,7 +490,7 @@ async function fetchStationYearData(stationId, year, startDate, endDate) {
     let promises = missingLocalStorage.map(async (missingRange) => {
         let start = year + '-' + missingRange.start;
         let end = year + '-' + missingRange.end;
-        const url = stationURLTemplate.formatUnicorn({ stationId, start, end });
+        const url = formatUnicorn(stationURLTemplate, { stationId, start, end });
         // Fetch data from the API for the given station ID and date range into sourceData
         const { data: sourceData } = await fetchJson(url);
         if (sourceData.length > 0) {
@@ -826,7 +823,7 @@ function appendStationWithFlag(element, stationId, name = '', country = '') {
         country = country.toLowerCase();
         const eSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         const eImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
-        let href = $flagURLTemplate.formatUnicorn({ country });
+        let href = formatUnicorn(flagURLTemplate, { country });
         eImage.setAttribute("href", href);
         eSVG.appendChild(eImage);
         element.appendChild(eSVG);
@@ -865,7 +862,7 @@ async function populateSearchResults(searchString) {
     if (searchString.length <= 2)
         return;
     updatingSearchResults = true;
-    const url = autoCompleteURLTemplate.formatUnicorn({ location: searchString, locale: $locale });
+    const url = formatUnicorn(autoCompleteURLTemplate, { location: searchString, locale: locale });
     let data = {};
     try {
         // Show loading spinner, hide magnifying glass
@@ -908,9 +905,9 @@ async function populateSearchResults(searchString) {
             return;
         let locationType = this.getAttribute('data-type');
         if (locationType === 'place') {
-            const placeURL = $locationURLTemplate.formatUnicorn({ id, country: country.toLowerCase() });
+            const placeURL = formatUnicorn(locationURLTemplate, { id, country: country.toLowerCase() });
             const { place: { location: { latitude, longitude } } } = await fetchJson(placeURL);
-            const nearbyStationURL = $nearbyStationURLTemplate.formatUnicorn({ latitude, longitude });
+            const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, { latitude, longitude });
             // Destructure directly into "station" object
             ({ data: { id, name } } = await fetchJson(nearbyStationURL));
         }
@@ -925,7 +922,7 @@ async function populateSearchResults(searchString) {
     if (placesSearchContainer && data.places) {
         insertHeader(placesSearchContainer, 'Places');
         data.places.forEach(place => {
-            let imgHTML = $flagImgTemplate.formatUnicorn({ country: place.country.toLowerCase() });
+            let imgHTML = formatUnicorn(flagImgTemplate, { country: place.country.toLowerCase() });
             const placeLink = document.createElement('a');
             placeLink.className = locationClass;
             placeLink.setAttribute('data-id', place.id);
@@ -954,7 +951,7 @@ async function populateSearchResults(searchString) {
             stationLink.setAttribute('data-region', matchedStation.region);
             stationLink.setAttribute('data-active', matchedStation.active.toString());
             stationLink.setAttribute('data-type', 'station');
-            let imgHTML = $flagImgTemplate.formatUnicorn({ country: matchedStation.country.toLowerCase() });
+            let imgHTML = formatUnicorn(flagImgTemplate, { country: matchedStation.country.toLowerCase() });
             stationLink.innerHTML = `
       ${imgHTML}
       <span>${matchedStation.name}</span>
@@ -985,16 +982,14 @@ function isInteger(val) {
         return false;
 }
 // Templates
-const $locationURLTemplate = "https://meteostat.net/props/en/place/${country}/${id}";
-const $nearbyStationURLTemplate = "https://d.meteostat.net/app/nearby?lang=en&limit=1&lat=${latitude}&lon=${longitude}";
-const $flagsRootLocal = '../flags/';
-const $flagsRoot = 'https://media.meteostat.net/assets/flags/4x3/';
-const $flagURLTemplate = $flagsRoot + '${country}.svg';
-const $flagImgTemplate = '<img src="' + $flagURLTemplate + '"class="country-flag me-2" alt="${country}">';
-const $api = "https://d.meteostat.net/app/";
-const $locale = "en";
-const autoCompleteURLTemplate = $api + "autocomplete?q=${location}&lang=${locale}";
-const stationURLTemplate = $api + "proxy/stations/daily?station=${stationId}&start=${start}&end=${end}";
+const locationURLTemplate = "https://meteostat.net/props/en/place/${country}/${id}";
+const nearbyStationURLTemplate = "https://d.meteostat.net/app/nearby?lang=en&limit=1&lat=${latitude}&lon=${longitude}";
+const flagURLTemplate = 'https://media.meteostat.net/assets/flags/4x3/${country}.svg';
+const flagImgTemplate = '<img src="' + flagURLTemplate + '"class="country-flag me-2" alt="${country}">';
+const api = "https://d.meteostat.net/app/";
+const locale = "en";
+const autoCompleteURLTemplate = api + "autocomplete?q=${location}&lang=${locale}";
+const stationURLTemplate = api + "proxy/stations/daily?station=${stationId}&start=${start}&end=${end}";
 // Web Elements
 const searchTextInput = document.getElementById("search");
 const placesSearchContainer = document.getElementById('places-search-container');
