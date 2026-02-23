@@ -743,7 +743,7 @@ async function getBrowserCity() {
     }
 }
 class ChartDataHandler {
-    static dbName = 'DB';
+    static dbName = 'WeatherDB';
     static weatherStoreName = 'WeatherStore';
     static async getChartData() {
         const { [allStationsId]: allChart, ...stationsCharts } = stationsChartData;

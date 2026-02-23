@@ -873,7 +873,7 @@ async function getBrowserCity(): Promise<void> {
 }
 
 class ChartDataHandler {
-  private static dbName = 'DB';
+  private static dbName = 'WeatherDB';
   private static weatherStoreName = 'WeatherStore';
 
   static async getChartData(): Promise<void> {
