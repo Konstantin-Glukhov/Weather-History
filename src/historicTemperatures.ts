@@ -1,3 +1,17 @@
+/*
+Use interface if you’re defining the shape of an object or class that might extend other interfaces.
+Use type when you want to work with more complex types like unions, intersections, or mapped types.
+
+type ApiResponse<T> = {
+  data: T;
+};
+
+*/
+
+interface ApiResponse<T> {
+  data: T;
+}
+
 class WeatherParameters {
   static keys = ['tmax', 'tmin'] as const;
 
@@ -27,16 +41,16 @@ type SourceData = {
   date?: string
 } & WeatherParameters;
 
-async function fetchJson(url: string, options: RequestInit = {}): Promise<any> {
-  const res = await fetch(url, options);
-  const contentType = res.headers.get("Content-Type");
-  let json;
+async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("Content-Type");
+  let json: T;
 
   if (contentType?.includes("application/json")) {
-    json = await res.json();
+    json = await response.json() as T;
   } else if (contentType?.includes("text/")) {
-    const text = await res.text();
-    json = JSON.parse(text);
+    const text = await response.text();
+    json = JSON.parse(text) as T;
   } else throw new Error("Unsupported content type: " + contentType);
 
   return json;
@@ -517,8 +531,13 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
     const start = year + '-' + missingRange.start;
     const end = year + '-' + missingRange.end;
     const url = formatUnicorn(stationURLTemplate, { stationId, start, end });
-    // Fetch data from the API for the given station ID and date range into sourceData
-    const { data: sourceData }: { data: SourceData[] } = await fetchJson(url);
+    // Fetch 'data' property from the Weather API object into sourceData
+    // object destructuring + renaming during destructuring + type annotation (Typing is bolted on afterwards)
+    // const { data: sourceData }: { data: SourceData[] } = await fetchJson(url);
+    // object destructuring + renaming during destructuring + generics (Typing flows through the function naturally)
+    // const { data: sourceData } = await fetchJson<{ data: SourceData[] }>(url);
+    // object destructuring + renaming during destructuring + generics with API response type
+    const { data: sourceData } = await fetchJson<ApiResponse<SourceData[]>>(url);
     if (sourceData.length > 0) {
       for (const row of sourceData)
         if (row.date)
@@ -822,7 +841,6 @@ async function setStorageItem<T>(storageType: StorageType, key: string, value: T
 }
 
 type IPLocation = {
-  ip: string | null,
   city: string | null,
   expiry: number | null
 }
@@ -834,22 +852,22 @@ async function getBrowserCity(): Promise<void> {
   const now = Date.now();
 
   // 1. Retrieve the cached string and parse it back into an object
-  let { ip, city, expiry } = await getStorageItem<IPLocation>('local', key);
+  let { city, expiry } = await getStorageItem<IPLocation>('local', key);
   // 2. Check if cache exists and if the current time is still before expiry
   if (!city || !expiry || now > expiry) {
     try {
-      ({ ip, city } = await fetchJson(ipApiUrl));
+      ({ city } = await fetchJson<IPLocation>(ipApiUrl));
       if (city) {
-        const location: IPLocation = { ip, city, expiry: now + oneDayInMs };
+        const location: IPLocation = { city, expiry: now + oneDayInMs };
         setStorageItem('local', key, location);
       } else console.warn("'city' is not defined in API response from", ipApiUrl);
     } catch (error) {
-      console.warn("IP fetch failed:", error);
+      console.warn("Browser IP location fetch failed:", error);
     }
   }
   if (city) {
     if (expiry)
-      console.warn("Falling back to stale data");
+      console.warn("Falling back to stale city:", city);
     populateSearchResults(city);
   }
 }
@@ -1043,7 +1061,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
     magnifyingGlass.style.display = 'none';
     loadingSpinner.style.display = 'block';
     // fetch data
-    ({ data } = await fetchJson(url, { signal: abortController.signal }));
+    ({ data } = await fetchJson<ApiResponse<AutoComplete>>(url, { signal: abortController.signal }));
     // Hide loading spinner, show magnifying glass again
     loadingSpinner.style.display = 'none';
     magnifyingGlass.style.display = 'block';
@@ -1082,10 +1100,11 @@ async function populateSearchResults(searchString: string): Promise<void> {
 
     if (locationType === 'place') {
       const placeURL = formatUnicorn(locationURLTemplate, { id, country: country.toLowerCase() });
-      const { place: { location: { latitude, longitude } } }: { place: Place } = await fetchJson(placeURL) as { place: Place };
+      // Destructure: take location properties: latitude and longitude from Place 'place' property
+      const { place: { location: { latitude, longitude } } } = await fetchJson<{ place: Place }>(placeURL);
       const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, { latitude, longitude });
-      // Destructure directly into "station" object
-      ({ data: { id, name } } = await fetchJson(nearbyStationURL) as { data: NearbyStation });
+      // Destructure: take properties id and name from NearbyStation 'data' property
+      ({ data: { id, name } } = await fetchJson<ApiResponse<NearbyStation>>(nearbyStationURL));
     }
     stations.upsert(id, new Station({ name, country, region, active }));
     selectedStations.add(id);

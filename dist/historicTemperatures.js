@@ -1,4 +1,13 @@
 "use strict";
+/*
+Use interface if you’re defining the shape of an object or class that might extend other interfaces.
+Use type when you want to work with more complex types like unions, intersections, or mapped types.
+
+type ApiResponse<T> = {
+  data: T;
+};
+
+*/
 class WeatherParameters {
     static keys = ['tmax', 'tmin'];
     tmax = undefined;
@@ -23,14 +32,14 @@ class WeatherParameters {
 }
 ;
 async function fetchJson(url, options = {}) {
-    const res = await fetch(url, options);
-    const contentType = res.headers.get("Content-Type");
+    const response = await fetch(url, options);
+    const contentType = response.headers.get("Content-Type");
     let json;
     if (contentType?.includes("application/json")) {
-        json = await res.json();
+        json = await response.json();
     }
     else if (contentType?.includes("text/")) {
-        const text = await res.text();
+        const text = await response.text();
         json = JSON.parse(text);
     }
     else
@@ -419,7 +428,12 @@ async function fetchStationYearData(idxDbName, storeName, stationId, year, start
         const start = year + '-' + missingRange.start;
         const end = year + '-' + missingRange.end;
         const url = formatUnicorn(stationURLTemplate, { stationId, start, end });
-        // Fetch data from the API for the given station ID and date range into sourceData
+        // Fetch 'data' property from the Weather API object into sourceData
+        // object destructuring + renaming during destructuring + type annotation (Typing is bolted on afterwards)
+        // const { data: sourceData }: { data: SourceData[] } = await fetchJson(url);
+        // object destructuring + renaming during destructuring + generics (Typing flows through the function naturally)
+        // const { data: sourceData } = await fetchJson<{ data: SourceData[] }>(url);
+        // object destructuring + renaming during destructuring + generics with API response type
         const { data: sourceData } = await fetchJson(url);
         if (sourceData.length > 0) {
             for (const row of sourceData)
@@ -706,25 +720,25 @@ async function getBrowserCity() {
     const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
     const now = Date.now();
     // 1. Retrieve the cached string and parse it back into an object
-    let { ip, city, expiry } = await getStorageItem('local', key);
+    let { city, expiry } = await getStorageItem('local', key);
     // 2. Check if cache exists and if the current time is still before expiry
     if (!city || !expiry || now > expiry) {
         try {
-            ({ ip, city } = await fetchJson(ipApiUrl));
+            ({ city } = await fetchJson(ipApiUrl));
             if (city) {
-                const location = { ip, city, expiry: now + oneDayInMs };
+                const location = { city, expiry: now + oneDayInMs };
                 setStorageItem('local', key, location);
             }
             else
                 console.warn("'city' is not defined in API response from", ipApiUrl);
         }
         catch (error) {
-            console.warn("IP fetch failed:", error);
+            console.warn("Browser IP location fetch failed:", error);
         }
     }
     if (city) {
         if (expiry)
-            console.warn("Falling back to stale data");
+            console.warn("Falling back to stale city:", city);
         populateSearchResults(city);
     }
 }
@@ -951,9 +965,10 @@ async function populateSearchResults(searchString) {
         const locationType = this.getAttribute('data-type');
         if (locationType === 'place') {
             const placeURL = formatUnicorn(locationURLTemplate, { id, country: country.toLowerCase() });
+            // Destructure: take location properties: latitude and longitude from Place 'place' property
             const { place: { location: { latitude, longitude } } } = await fetchJson(placeURL);
             const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, { latitude, longitude });
-            // Destructure directly into "station" object
+            // Destructure: take properties id and name from NearbyStation 'data' property
             ({ data: { id, name } } = await fetchJson(nearbyStationURL));
         }
         stations.upsert(id, new Station({ name, country, region, active }));
