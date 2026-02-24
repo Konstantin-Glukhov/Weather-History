@@ -864,10 +864,9 @@ async function getBrowserCity(): Promise<void> {
     } catch (error) {
       console.warn("Browser IP location fetch failed:", error);
     }
-  }
+  } else
+    console.warn("Using cached location:", city);
   if (city) {
-    if (expiry)
-      console.warn("Falling back to stale city:", city);
     populateSearchResults(city);
   }
 }
