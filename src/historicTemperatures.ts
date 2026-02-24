@@ -745,13 +745,13 @@ class IdxDB {
       request.onerror = function () { reject(request.error); };
       request.onupgradeneeded = function () {
         db = request.result;
-        console.log("Upgrade needed indexed DB:", dbName, "Version:", db.version);
+        // console.log("Upgrade needed indexed DB:", dbName, "Version:", db.version);
         db.createObjectStore(storeName);
       };
       request.onsuccess = function () {
         db = request.result;
         IdxDB.idxDb.set(dbName, db);
-        console.log("Opened indexed DB:", dbName);
+        // console.log("Opened indexed DB:", dbName);
         resolve(db);
       };
     });
@@ -842,30 +842,28 @@ async function setStorageItem<T>(storageType: StorageType, key: string, value: T
 
 type IPLocation = {
   city: string | null,
-  expiry: number | null
+  expiry: string | null
 }
 
 async function getBrowserCity(): Promise<void> {
   const ipApiUrl = 'https://ipapi.co/json';
   const key = 'IPCity';
-  const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
-  const now = Date.now();
 
   // 1. Retrieve the cached string and parse it back into an object
   let { city, expiry } = await getStorageItem<IPLocation>('local', key);
   // 2. Check if cache exists and if the current time is still before expiry
-  if (!city || !expiry || now > expiry) {
+  if (!city || !expiry || todayDate > expiry) {
     try {
       ({ city } = await fetchJson<IPLocation>(ipApiUrl));
       if (city) {
-        const location: IPLocation = { city, expiry: now + oneDayInMs };
+        const location: IPLocation = { city, expiry: tomorrowDate };
         setStorageItem('local', key, location);
-      } else console.warn("'city' is not defined in API response from", ipApiUrl);
+      } else console.log("'city' is not defined in API response from", ipApiUrl);
     } catch (error) {
-      console.warn("Browser IP location fetch failed:", error);
+      console.log("Browser IP location fetch failed:", error);
     }
   } else
-    console.warn("Using cached location:", city);
+    console.log("Using cached location:", city);
   if (city) {
     populateSearchResults(city);
   }
@@ -1209,11 +1207,14 @@ searchTextInput.addEventListener('keydown', async function (event) {
 // Script Variables
 const allStationsId = 'all stations';
 const abortController = new AbortController();
+
+const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
 const today = new Date();
 const currentYear: number = today.getFullYear();
 const todayYear: string = currentYear.toString();
 const todayDate: string = today.toISOString().substring(5, 10);
-const yesterdayDate: string = new Date(today.valueOf() - 1000 * 60 * 60 * 24).toISOString().substring(5, 10);
+const yesterdayDate: string = new Date(today.valueOf() - oneDayInMs).toISOString().substring(5, 10);
+const tomorrowDate: string = new Date(today.valueOf() + oneDayInMs).toISOString().substring(5, 10);
 
 const selectedParams: Set<string> = new Set();
 const selectedStations: Set<string> = new Set();
