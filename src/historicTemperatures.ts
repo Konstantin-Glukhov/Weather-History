@@ -645,52 +645,6 @@ function updateCustomYears(): boolean {
   return true;
 }
 
-function validateSelection(): boolean {
-  if (!updateCustomYears()) return false;
-  getCheckedBoxes(weatherParamContainer, selectedParams);
-  if (selectedParams.size === 0) {
-    warn("Select at least one weather parameter");
-    return false;
-  }
-  getCheckedBoxes(stationsCheckboxContainer, selectedStations);
-  if (!selectedStations.size) {
-    warn("Select stations to submit");
-    searchTextInput.focus();
-    return false;
-  }
-  if (selectedYears.size === 0) {
-    clearSearchResults(false);
-    warn("Select years to submit");
-    return false;
-  }
-  thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
-  thisSubmission.add(allStations.checked ? 'all' : 'single');
-  if (areSetsEqual(thisSubmission, priorSubmission)) {
-    warn("Change your selection to submit");
-    return false;
-  }
-  priorSubmission = thisSubmission;
-  return true;
-}
-
-// Function to set the display state of canvas elements
-function setChartVisibility(chartId: string | Iterable<string>, state: string | boolean): boolean {
-  let iter: string[];
-  let display: string
-  if (typeof state === 'boolean') display = state ? 'block' : 'none';
-  else display = state;
-  if (typeof chartId === 'string') iter = [chartId];
-  else iter = Array.from(chartId);
-  let count = 0;
-  iter.forEach(chart => {
-    if (chart in charts) {
-      charts[chart].canvas.style.display = display;
-      count += 1;
-    }
-  });
-  return count === iter.length; // Return true if all canvases were found and set
-}
-
 async function applyStationSelection(event: Event) {
   const target = event.target as HTMLInputElement;
   const stationId = target.value;
@@ -916,25 +870,93 @@ async function getChartData(): Promise<void> {
   priorSubmission = thisSubmission;
 }
 
+// Function to set the display state of canvas elements
+function setChartVisibility(chartId: string | Iterable<string>, state: string | boolean): boolean {
+  let iter: string[];
+  let display: string
+  if (typeof state === 'boolean') display = state ? 'block' : 'none';
+  else display = state;
+  if (typeof chartId === 'string') iter = [chartId];
+  else iter = Array.from(chartId);
+  let count = 0;
+  iter.forEach(chart => {
+    if (chart in charts) {
+      charts[chart].canvas.style.display = display;
+      count += 1;
+    }
+  });
+  return count === iter.length; // Return true if all canvases were found and set
+}
+
 function getChartId(stationId: string): string {
   // Generate a unique chart ID based on the station ID and selected years and parameters
   return `${stationId}-${Array.from(selectedYears.union(selectedParams)).sort().join("-")}`;
 }
 
+function validate(): boolean {
+  if (!selectedStations.size) {
+    warn("Select stations to submit");
+    searchTextInput.focus();
+    return false;
+  }
+
+  if (!updateCustomYears()) return false;
+
+  if (selectedYears.size === 0) {
+    clearSearchResults(false);
+    warn("Select years to submit");
+    return false;
+  }
+
+  if (selectedParams.size === 0) {
+    warn("Select at least one weather parameter");
+    return false;
+  }
+
+  // thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
+  // thisSubmission.add(allStations.checked ? 'all' : 'single');
+  // if (areSetsEqual(thisSubmission, priorSubmission)) {
+  //   warn("Change your selection to submit");
+  //   return false;
+  // }
+  // priorSubmission = thisSubmission;
+  return true;
+}
+
+async function getSelectedCharts(): Promise<Map<string, string>> {
+  getCheckedBoxes(stationsCheckboxContainer, selectedStations);
+  getCheckedBoxes(yearsCheckboxContainer, selectedYears);
+  getCheckedBoxes(weatherParamContainer, selectedParams);
+
+  const chartStation: Map<string, string> = new Map<string, string>();
+  if (!selectedYears.size && selectedParams.size) return chartStation;
+  selectedCharts.clear();
+  for (const stationId of allStations.checked ? [allStationsId] : selectedStations) {
+    const chartId = getChartId(stationId);
+    selectedCharts.add(chartId);
+    chartStation.set(chartId, stationId);
+  }
+  const unselectedCharts = new Set(Object.keys(charts)).difference(selectedCharts);
+  setChartVisibility(unselectedCharts, 'none');
+  setChartVisibility(selectedCharts, 'block');
+  if (!validate())
+    chartStation.clear();
+  return chartStation;
+}
+
 async function renderChart(event: Event): Promise<void> {
   event.preventDefault();
   clearSearchResults(false);
-  if (!validateSelection()) return;
-  await getChartData();
+  const chartStation = await getSelectedCharts();
+  if (!chartStation.size) return;
   warn('Rendering', 'blink');
+  await getChartData();
   if (!canvasContainer) throw new Error('Canvas container is missing');
-  selectedCharts.clear(); // Clear previously selected charts
-  for (const stationId of allStations.checked ? [allStationsId] : selectedStations) {
-    const chartId: string = getChartId(stationId);
-    selectedCharts.add(chartId); // Add chart ID to selected charts
-    if (chartId in charts) continue; // Skip if chart already exists
-    // Create a new chart for the station
+  for (const [chartId, stationId] of chartStation) {
     const stationChartData = stationsChartData[stationId];
+    if (chartId in charts) continue; // Skip if chart already exists
+    if (!stationChartData) throw new Error('Chart data is missing');
+    // Create a new chart for the station
     const title = [`Historic Air Temperatures for ${stations.getNameOrId(stationId)}`];
     if (stationChartData.datasets.length > 1)
       title.push('Click on the legend icon to deselect/reselect the graph');
@@ -963,15 +985,9 @@ async function renderChart(event: Event): Promise<void> {
       data: stationChartData,
     });
   }
-  // Make unselected canvas elements invisible and selected visible
-  setChartVisibility(new Set(Object.keys(charts)).difference(selectedCharts), 'none');
+  // Make selected canvas visible
   setChartVisibility(selectedCharts, 'block');
   warn('');
-}
-
-async function updateSelectedYears(event: Event): Promise<void> {
-  getCheckedBoxes(yearsCheckboxContainer, selectedYears);
-  await renderChart(event);
 }
 
 function createYearSelection(): void {
@@ -997,7 +1013,7 @@ function createYearSelection(): void {
     // Append the checkbox item to the checkbox container
     yearsCheckboxContainer?.appendChild(checkboxItem);
   }
-  yearsCheckboxContainer.addEventListener('change', updateSelectedYears);
+  yearsCheckboxContainer.addEventListener('change', renderChart);
 }
 
 function warn(message: string, cls: string = ''): void {

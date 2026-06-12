@@ -532,55 +532,6 @@ function updateCustomYears() {
     }
     return true;
 }
-function validateSelection() {
-    if (!updateCustomYears())
-        return false;
-    getCheckedBoxes(weatherParamContainer, selectedParams);
-    if (selectedParams.size === 0) {
-        warn("Select at least one weather parameter");
-        return false;
-    }
-    getCheckedBoxes(stationsCheckboxContainer, selectedStations);
-    if (!selectedStations.size) {
-        warn("Select stations to submit");
-        searchTextInput.focus();
-        return false;
-    }
-    if (selectedYears.size === 0) {
-        clearSearchResults(false);
-        warn("Select years to submit");
-        return false;
-    }
-    thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
-    thisSubmission.add(allStations.checked ? 'all' : 'single');
-    if (areSetsEqual(thisSubmission, priorSubmission)) {
-        warn("Change your selection to submit");
-        return false;
-    }
-    priorSubmission = thisSubmission;
-    return true;
-}
-// Function to set the display state of canvas elements
-function setChartVisibility(chartId, state) {
-    let iter;
-    let display;
-    if (typeof state === 'boolean')
-        display = state ? 'block' : 'none';
-    else
-        display = state;
-    if (typeof chartId === 'string')
-        iter = [chartId];
-    else
-        iter = Array.from(chartId);
-    let count = 0;
-    iter.forEach(chart => {
-        if (chart in charts) {
-            charts[chart].canvas.style.display = display;
-            count += 1;
-        }
-    });
-    return count === iter.length; // Return true if all canvases were found and set
-}
 async function applyStationSelection(event) {
     const target = event.target;
     const stationId = target.value;
@@ -777,27 +728,94 @@ async function getChartData() {
     }
     priorSubmission = thisSubmission;
 }
+// Function to set the display state of canvas elements
+function setChartVisibility(chartId, state) {
+    let iter;
+    let display;
+    if (typeof state === 'boolean')
+        display = state ? 'block' : 'none';
+    else
+        display = state;
+    if (typeof chartId === 'string')
+        iter = [chartId];
+    else
+        iter = Array.from(chartId);
+    let count = 0;
+    iter.forEach(chart => {
+        if (chart in charts) {
+            charts[chart].canvas.style.display = display;
+            count += 1;
+        }
+    });
+    return count === iter.length; // Return true if all canvases were found and set
+}
 function getChartId(stationId) {
     // Generate a unique chart ID based on the station ID and selected years and parameters
     return `${stationId}-${Array.from(selectedYears.union(selectedParams)).sort().join("-")}`;
 }
+function validate() {
+    if (!selectedStations.size) {
+        warn("Select stations to submit");
+        searchTextInput.focus();
+        return false;
+    }
+    if (!updateCustomYears())
+        return false;
+    if (selectedYears.size === 0) {
+        clearSearchResults(false);
+        warn("Select years to submit");
+        return false;
+    }
+    if (selectedParams.size === 0) {
+        warn("Select at least one weather parameter");
+        return false;
+    }
+    // thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
+    // thisSubmission.add(allStations.checked ? 'all' : 'single');
+    // if (areSetsEqual(thisSubmission, priorSubmission)) {
+    //   warn("Change your selection to submit");
+    //   return false;
+    // }
+    // priorSubmission = thisSubmission;
+    return true;
+}
+async function getSelectedCharts() {
+    getCheckedBoxes(stationsCheckboxContainer, selectedStations);
+    getCheckedBoxes(yearsCheckboxContainer, selectedYears);
+    getCheckedBoxes(weatherParamContainer, selectedParams);
+    const chartStation = new Map();
+    if (!selectedYears.size && selectedParams.size)
+        return chartStation;
+    selectedCharts.clear();
+    for (const stationId of allStations.checked ? [allStationsId] : selectedStations) {
+        const chartId = getChartId(stationId);
+        selectedCharts.add(chartId);
+        chartStation.set(chartId, stationId);
+    }
+    const unselectedCharts = new Set(Object.keys(charts)).difference(selectedCharts);
+    setChartVisibility(unselectedCharts, 'none');
+    setChartVisibility(selectedCharts, 'block');
+    if (!validate())
+        chartStation.clear();
+    return chartStation;
+}
 async function renderChart(event) {
     event.preventDefault();
     clearSearchResults(false);
-    if (!validateSelection())
+    const chartStation = await getSelectedCharts();
+    if (!chartStation.size)
         return;
-    await getChartData();
     warn('Rendering', 'blink');
+    await getChartData();
     if (!canvasContainer)
         throw new Error('Canvas container is missing');
-    selectedCharts.clear(); // Clear previously selected charts
-    for (const stationId of allStations.checked ? [allStationsId] : selectedStations) {
-        const chartId = getChartId(stationId);
-        selectedCharts.add(chartId); // Add chart ID to selected charts
+    for (const [chartId, stationId] of chartStation) {
+        const stationChartData = stationsChartData[stationId];
         if (chartId in charts)
             continue; // Skip if chart already exists
+        if (!stationChartData)
+            throw new Error('Chart data is missing');
         // Create a new chart for the station
-        const stationChartData = stationsChartData[stationId];
         const title = [`Historic Air Temperatures for ${stations.getNameOrId(stationId)}`];
         if (stationChartData.datasets.length > 1)
             title.push('Click on the legend icon to deselect/reselect the graph');
@@ -826,14 +844,9 @@ async function renderChart(event) {
             data: stationChartData,
         });
     }
-    // Make unselected canvas elements invisible and selected visible
-    setChartVisibility(new Set(Object.keys(charts)).difference(selectedCharts), 'none');
+    // Make selected canvas visible
     setChartVisibility(selectedCharts, 'block');
     warn('');
-}
-async function updateSelectedYears(event) {
-    getCheckedBoxes(yearsCheckboxContainer, selectedYears);
-    await renderChart(event);
 }
 function createYearSelection() {
     // Create checkboxes for the last 10 years
@@ -854,7 +867,7 @@ function createYearSelection() {
         // Append the checkbox item to the checkbox container
         yearsCheckboxContainer?.appendChild(checkboxItem);
     }
-    yearsCheckboxContainer.addEventListener('change', updateSelectedYears);
+    yearsCheckboxContainer.addEventListener('change', renderChart);
 }
 function warn(message, cls = '') {
     submissionWarning.textContent = message;
