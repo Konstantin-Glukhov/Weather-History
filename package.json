@@ -6,7 +6,7 @@
     "prebuild": "mkdir -Force dist",
     "build": "tsc",
     "tsc": "tsc",
-    "dist": "npm run static && npm run build",
+    "dist": "npm run build",
     "clean": "rm -ErrorAction SilentlyContinue -Force -Recurse dist"
   },
   "author": "Konstantin Glukhov",

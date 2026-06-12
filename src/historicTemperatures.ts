@@ -1,12 +1,14 @@
 /*
-Use interface if you’re defining the shape of an object or class that might extend other interfaces.
-Use type when you want to work with more complex types like unions, intersections, or mapped types.
+Use interface if you’re defining the shape of an object or class that might
+extend other interfaces.  Use type when you want to work with more complex types
+like unions, intersections, or mapped types.
 
 type ApiResponse<T> = {
   data: T;
 };
-
 */
+
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: valid use case
 
 interface ApiResponse<T> {
   data: T;
@@ -51,7 +53,7 @@ async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> 
   } else if (contentType?.includes("text/")) {
     const text = await response.text();
     json = JSON.parse(text) as T;
-  } else throw new Error("Unsupported content type: " + contentType);
+  } else throw new Error(`Unsupported content type: ${contentType}`);
 
   return json;
 }
@@ -89,12 +91,12 @@ class ChartDataset {
 
   constructor(type: string, weatherParameter: string, stationId: string, year: string, dates: Array<string>) {
     // Remove punctuation and whitespace characters, and everything after them, from the station name
-    let rgb;
+    let rgb: string;
     const stationName = stations.getNameOrId(stationId);
-    const yearParam = year + ' ' + (weatherParameter.substring(1) === 'max' ? 'High' : 'Low');
+    const yearParam = `${year} ${weatherParameter.substring(1) === 'max' ? 'High' : 'Low'}`;
     if (type === 'all') {
       rgb = getRGBValue(stationId, yearParam);
-      this.label = stationName + ' ' + yearParam; // Label for all stations is station name + year parameter
+      this.label = `${stationName} ${yearParam}`; // Label for all stations is station name + year parameter
     } else {
       rgb = getRGBValue('27500', yearParam); // Use a fixed station ID for single station color
       this.label = yearParam; // Label for single station is year + weather parameter
@@ -137,11 +139,11 @@ class ChartData {
           )
         ).flat(2);
     else
-      this.datasets = weatherParameters.map(param =>
+      this.datasets = weatherParameters.flatMap(param =>
         years.map(year =>
           new ChartDataset('single', param, stationId, year, dates)
         )
-      ).flat();
+      );
   }
   isLastDate(shortDate: string | string[]): boolean {
     if (this?.labels.length > 0)
@@ -157,14 +159,14 @@ type StationsChartData = { [stationId: string]: ChartData };
 
 declare class Chart {
   data: ChartData;
-  options: {};
+  options: object;
   canvas: HTMLCanvasElement;
   update(): unknown;
   constructor(
     canvas: HTMLCanvasElement,
     config: {
       type: "line" | "box";
-      options: {};
+      options: object;
       data: ChartData;
     }
   );
@@ -224,46 +226,49 @@ class Station {
   country: string;
   region: string | null;
   active: boolean;
-  data?: YearData = {}; // Object with year as key and WeatherData as value
-  constructor({ name, country, region, active }: Station) {
+  data?: YearData; // Object with year as key and WeatherData as value
+  constructor({ name, country, region, active, data = {} }: Station) {
     this.name = name.replace(/[\p{P}\p{Z}]+.*$/gu, "");
     this.country = country;
-    this.region = region;
-    this.active = active;
+    this.region = region ?? null;
+    this.active = active ?? false;
+    this.data = data;
   }
-  get?(property: keyof Station): any {
+
+  // Purely typed dynamic getter using generics
+  get?<K extends keyof Station>(property: K): Station[K] | undefined {
     if (property in this)
       return this[property];
   }
 }
 
 class Stations {
-  [id: string]: Station | any; // Index (dynamic) property
-  [Symbol.iterator](): Iterator<{ [id: string]: Station }> {
-    const keys: string[] = Object.keys(this);
+  // Allow string indexes to hold Station objects, but also account for the class methods/symbols
+  [id: string]: Station | unknown;
+
+  [Symbol.iterator](): Iterator<Record<string, Station>> {
+    // Only grab keys that map to actual Station instances, skipping methods
+    const keys: string[] = Object.keys(this).filter(key => this[key] instanceof Station);
     let index = 0;
     return {
-      next: (): IteratorResult<{ [id: string]: Station }> => {
+      next: (): IteratorResult<Record<string, Station>> => {
         if (index < keys.length) {
           const key = keys[index++];
-          return { value: { [key]: this[key] }, done: false };
-        } else return { value: undefined, done: true };
+          // Cast explicitly since we guaranteed it's a Station via the filter
+          const value = { [key]: this[key] as Station };
+          return { value, done: false };
+        }
+        return { value: undefined, done: true };
       }
     };
   }
-  getSortedArrayBy(property: keyof Station): Array<[string, Station]> {
-    return Object.entries(this)
-      .filter(([, val]) => val instanceof Station) // Ensure we are only dealing with Station objects
-      .sort(([, a], [, b]) => {
-        const aValue = a[property];
-        const bValue = b[property];
-        if (typeof aValue === 'string' && typeof bValue === 'string')
-          return aValue.localeCompare(bValue);
-        else if (typeof aValue === 'number' && typeof bValue === 'number')
-          return aValue - bValue; // Numeric comparison
-        else return 0; // Handle mixed types or non-comparable types
-      }) as Array<[string, Station]>;
+
+  get(id: string): Station | undefined {
+    const station = this[id];
+    if (station instanceof Station)
+      return station;
   }
+
   upsert(id: string, station: Station): void {
     /*
        upsert(id: string, station: Omit<Stations[string], 'data'> & { data: YearData }): void {
@@ -278,6 +283,58 @@ class Stations {
   delete(id: string): boolean {
     return delete this[id];
   }
+  getStationData(id: string): NonNullable<Station["data"]> {
+    // Returns the years object with weather data for a given station ID.
+    // { year: { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }, ... }
+    const station = this.get(id);
+    return station?.data ?? {};
+  }
+  hasStationYearData(id: string, year: string): boolean {
+    // Check if the station has weather data for a given year.
+    // Returns true if the station ID and year exist in the data.
+    const station = this.get(id);
+    if (station?.data)
+      return station.data[year] && Object.keys(station.data[year]).length > 0;
+    return false;
+  }
+  getStationYearData(id: string, year: string): WeatherData {
+    // Returns the weather data for a given station ID and year.
+    // { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }
+    const station = this.get(id);
+    if (station?.data) {
+      station.data[year] ??= {};
+      return station.data[year];
+    }
+    return {};
+  }
+  getNameOrId(id: string): string {
+    return this.get(id)?.name ?? id;
+  }
+  getCountry(id: string): string | undefined {
+    return this.get(id)?.country;
+  }
+  getStationYearDataDates(id: string, year: string): string[] {
+    return Object.keys(this.getStationYearData(id, year));
+  }
+  getStationYearWeatherParameter(id: string, year: string, date: string, parameter: string): number | undefined {
+    // Returns the weather data for a given station ID, year and date.
+    // { tmax: 30, tmin: 20, ... }
+    return this.getStationYearData(id, year)?.[date]?.[parameter as keyof WeatherParameters];
+  }
+  getSortedArrayBy(property: keyof Station): Array<[string, Station]> {
+    return Object.entries(this)
+      .filter((pair): pair is [string, Station] => pair[1] instanceof Station)
+      .sort(([, a], [, b]) => {
+        const aValue = a[property];
+        const bValue = b[property];
+
+        if (typeof aValue === 'string' && typeof bValue === 'string')
+          return aValue.localeCompare(bValue);
+        if (typeof aValue === 'number' && typeof bValue === 'number')
+          return aValue - bValue;
+        return 0;
+      });
+  }
   getStations(filter: string[] | Set<string> = []): Stations {
     // This method returns a shallow copy of the stations object but does not provide iteration capabilities.
     const length = filter instanceof Set ? filter.size : filter.length;
@@ -288,44 +345,12 @@ class Stations {
         filteredStations[id] = this[id];
     return filteredStations;
   }
-  getStationData(id: string): YearData {
-    // Returns the years object with weather data for a given station ID.
-    // { year: { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }, ... }
-    return this[id]?.data;
-  }
-  hasStationYearData(id: string, year: string): boolean {
-    // Check if the station has weather data for a given year.
-    // Returns true if the station ID and year exist in the data.
-    return this[id]?.data?.[year] && Object.keys(this[id].data[year]).length > 0;
-  }
-  getStationYearData(id: string, year: string): WeatherData {
-    // Returns the weather data for a given station ID and year.
-    // { 'mm-dd': { tmax: 30, tmin: 20, ... }, ... }
-    if (this[id] && this[id].data) {
-      this[id].data[year] ??= {};
-      return this[id].data[year];
-    }
-    return {};
-  }
-  getStationYearDataDates(id: string, year: string): string[] {
-    return Object.keys(this.getStationYearData(id, year));
-  }
-  getStationYearWeatherParameter(id: string, year: string, date: string, parameter: string): number | undefined {
-    // Returns the weather data for a given station ID, year and date.
-    // { tmax: 30, tmin: 20, ... }
-    return this.getStationYearData(id, year)?.[date]?.[parameter as keyof WeatherParameters];
-  }
-  getNameOrId(id: string): string {
-    return this[id]?.name ?? id;
-  }
-  getCountry(id: string): string {
-    return this[id]?.country;
-  }
 }
 
-function formatUnicorn(str: string, params: { [key: string]: any }): string {
+function formatUnicorn(str: string, params: Record<string, unknown>): string {
   return str.replace(/\$\{([^}]+)\}/g, (_, key) => {
-    return key in params ? params[key] : '';
+    // String template replacement implicitly handles string coercion safely
+    return key in params ? String(params[key]) : '';
   }).trim();
 }
 
@@ -378,15 +403,17 @@ function getRGBValue(stationId: string, year: string): string {
   return `#${((1 << 24) + (adjustedR << 16) + (adjustedG << 8) + adjustedB).toString(16).slice(1).toUpperCase()}`;
 }
 
-function allValuesAreMissing(obj: Record<string, any>, keys: string[] = []): boolean {
-  // Return true if all values for the given set of keys are null
-  let count = 0;
-  for (const key of keys.length ? keys : Object.keys(obj)) {
-    if (obj[key] != null || obj[key] !== undefined)
-      return false; // Return false as soon as we find a non-null value
-    count += 1; // Count null values
-  }
-  return count > 0; // Return true if at least one key is checked
+function allValuesAreMissing<T extends object>(obj: T, keys: Array<keyof T> = []): boolean {
+  // Use Object.keys if no specific keys array is supplied
+  const targetKeys = keys.length ? keys : Object.keys(obj) as Array<keyof T>;
+
+  if (targetKeys.length === 0) return false;
+
+  for (const key of targetKeys)
+    if (obj[key] != null)
+      return false;
+
+  return true;
 }
 
 function findOrFillMissingDatesData(year: string, dateRange: DateRange, data: WeatherData, missingData?: WeatherData): DateRange[] {
@@ -397,8 +424,8 @@ function findOrFillMissingDatesData(year: string, dateRange: DateRange, data: We
     ||
     (!selectedYears.has(todayYear) && dateRange.end === '12-31')
   )) return missingRanges; // If the end date is in data, return empty array
-  const startDate = new Date(year + "-" + dateRange.start);
-  const endDate = new Date(year + "-" + dateRange.end);
+  const startDate = new Date(`${year}-${dateRange.start}`);
+  const endDate = new Date(`${year}-${dateRange.end}`);
   let missingRange: DateRange = new DateRange();
   let priorDate = "";
   for (; startDate <= endDate; startDate.setDate(startDate.getDate() + 1)) {
@@ -425,9 +452,9 @@ function ZScoreOutliers(weatherParameters: WeatherParameters[], threshold: numbe
   for (const key of WeatherParameters.keys) {
     // Step 1: Calculate the Mean of the data
     const data = weatherParameters.map(parameters => parameters[key]).filter(value => value !== undefined);
-    const mean = data.reduce((sum, value) => sum + value!, 0) / data.length;
+    const mean = data.reduce((sum, value) => sum + value, 0) / data.length;
     // Step 2: Calculate the Standard Deviation of the data
-    const variance = data.reduce((sum, value) => sum + Math.pow(value! - mean, 2), 0) / data.length;
+    const variance = data.reduce((sum, value) => sum + (value - mean) ** 2, 0) / data.length;
     const standardDeviation = Math.sqrt(variance);
     // Step 3: Calculate the Z-score for each data point
     for (const parameters of weatherParameters) {
@@ -474,24 +501,18 @@ function _IQROutliers(weatherParameters: WeatherParameters[], k: number = 1.5): 
   }
 }
 
-type GroupByCallback = (date: string, index: number) => number;
-
 function _groupByMonth(date: string): number {
   const month = date.substring(0, 1);  // Extract the month part of the date (mm-dd)
   return parseInt(month, 10);  // Return the month as the group index (e.g., 1 for January)
 }
 
-function groupByDays(date: string, index: number): number {
-  return Math.floor(index / 30);  // Group every days (based on index)
-}
-
-function outliersByGroup(weatherData: WeatherData, groupByCallback: GroupByCallback): void {
+function outliersByGroup(weatherData: WeatherData): void {
   // Undefine outliers by group using the Interquartile Range (IQR) method or other methods
   const sortedData = Object.entries(weatherData).sort((a, b) => a[0].localeCompare(b[0]));
 
   // Group data by the index defined by the callback
-  const groupedData = sortedData.reduce((acc, [date, parameters], index) => {
-    const groupIndex = groupByCallback(date, index);  // Get group index using the callback
+  const groupedData = sortedData.reduce((acc, [_, parameters], index) => {
+    const groupIndex = Math.floor(index / 30); // Group by every 30 entries (based on array index)
 
     // Ensure the groupIndex exists in the accumulator
     if (!(groupIndex in acc)) acc[groupIndex] = [];
@@ -518,7 +539,7 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
   const missingCache: DateRange[] = findOrFillMissingDatesData(year, { start: startDate, end: endDate }, stationYearCache);
   if (!missingCache.length) return;
   let missingLocalStorage: DateRange[] = [];
-  const stationYear = stationId + '-' + year;
+  const stationYear = `${stationId}-${year}`;
   const stationYearStore: WeatherData = await getStorageItem<WeatherData>('idxDB', stationYear, idxDbName, storeName);
   if (Object.keys(stationYearStore).length) {
     // Populate missing cache from local storage
@@ -528,8 +549,8 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
   } else missingLocalStorage = missingCache;
   // If the date range is not in the cache, fetch it from the API
   const promises = missingLocalStorage.map(async missingRange => {
-    const start = year + '-' + missingRange.start;
-    const end = year + '-' + missingRange.end;
+    const start = `${year}-${missingRange.start}`;
+    const end = `${year}-${missingRange.end}`;
     const url = formatUnicorn(stationURLTemplate, { stationId, start, end });
     // Fetch 'data' property from the Weather API object into sourceData
     // object destructuring + renaming during destructuring + type annotation (Typing is bolted on afterwards)
@@ -543,7 +564,7 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
         if (row.date)
           stationYearCache[row.date.substring(5, 10)] = new WeatherParameters(row);
       // undefineOutliersIQR(Object.values(stationYearCache), 2.0); // Undefine outliers using the Interquartile Range (IQR) method
-      outliersByGroup(stationYearCache, groupByDays); // Undefine outliers using the Interquartile Range (IQR) method
+      outliersByGroup(stationYearCache); // Undefine outliers using the Interquartile Range (IQR) method
       for (const date of Object.keys(stationYearCache)) {
         if (allValuesAreMissing(stationYearCache[date]))
           delete stationYearCache[date];
@@ -703,7 +724,7 @@ function deleteUnselected(chart: ChartData, cachedDataSets: Set<string>): void {
     for (let i = chart.datasets.length - 1; i >= 0; i--) {
       const datasetId = chart.datasets[i].datasetId;
       if (datasetId.isSubsetOf(thisSubmission))
-        datasetId.forEach(id => cachedDataSets.add(id)); // Therer is no way to add a Set to another Set, so we add each element
+        cachedDataSets = datasetId.union(cachedDataSets);
       else
         chart.datasets.splice(i, 1); // del array element by index
     }
@@ -727,83 +748,81 @@ async function fetchWeatherData(idxDbName: string, storeName: string): Promise<{
   return getCommonDates();
 }
 
-class IdxDB {
-  /*
-   IndexedDB is based on an event-driven API that doesn't natively support
-   async/await (or promises).
- 
-   To use async/await with IndexedDB, you have to wrap its callbacks in a
-   Promise. There's no way around that because async/await requires a promise to
-   resolve (or reject) to work properly.
-   */
-  static idxDb: Map<string, IDBDatabase> = new Map<string, IDBDatabase>();
+/*
+  IndexedDB is based on an event-driven API that doesn't natively support
+  async/await (or promises).
 
-  private static async openDb(dbName: string, storeName: string, version: number = 1): Promise<IDBDatabase> {
-    let db: IDBDatabase | undefined;
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(dbName, version);
-      request.onerror = function () { reject(request.error); };
-      request.onupgradeneeded = function () {
-        db = request.result;
-        // console.log("Upgrade needed indexed DB:", dbName, "Version:", db.version);
-        db.createObjectStore(storeName);
-      };
-      request.onsuccess = function () {
-        db = request.result;
-        IdxDB.idxDb.set(dbName, db);
-        // console.log("Opened indexed DB:", dbName);
-        resolve(db);
-      };
-    });
-  }
+  To use async/await with IndexedDB, you have to wrap its callbacks in a
+  Promise. There's no way around that because async/await requires a promise to
+  resolve (or reject) to work properly.
+  */
+const idxDb: Map<string, IDBDatabase> = new Map<string, IDBDatabase>();
 
-  static async openStore(dbName: string, storeName: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
-    let db: IDBDatabase | undefined;
-    db = IdxDB.idxDb.get(dbName);
-    if (!db)
-      db = await IdxDB.openDb(dbName, storeName);
-    if (!db.objectStoreNames.contains(storeName)) {
-      const version = db.version + 1;
-      db.close();
-      IdxDB.idxDb.delete(dbName);
-      db = await IdxDB.openDb(dbName, storeName, version);
-    }
-    const transaction = db.transaction(storeName, mode);
-    return transaction.objectStore(storeName);
-  }
+async function openDb(dbName: string, storeName: string, version: number = 1): Promise<IDBDatabase> {
+  let db: IDBDatabase | undefined;
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, version);
+    request.onerror = () => { reject(request.error); };
+    request.onupgradeneeded = () => {
+      db = request.result;
+      // console.log("Upgrade needed indexed DB:", dbName, "Version:", db.version);
+      db.createObjectStore(storeName);
+    };
+    request.onsuccess = () => {
+      db = request.result;
+      idxDb.set(dbName, db);
+      // console.log("Opened indexed DB:", dbName);
+      resolve(db);
+    };
+  });
+}
 
-  // Generic function to perform an operation on the store
-  private static async performStoreOperation<T>(
-    dbName: string,
-    storeName: string,
-    mode: IDBTransactionMode,
-    operation: (store: IDBObjectStore) => IDBRequest
-  ): Promise<T> {
-    const store = await IdxDB.openStore(dbName, storeName, mode);
-    return new Promise((resolve, reject) => {
-      const request = operation(store);
-      request.onsuccess = () => resolve(request.result || {});
-      request.onerror = () => reject(request.error);
-    });
+async function openStore(dbName: string, storeName: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
+  let db: IDBDatabase | undefined;
+  db = idxDb.get(dbName);
+  if (!db)
+    db = await openDb(dbName, storeName);
+  if (!db.objectStoreNames.contains(storeName)) {
+    const version = db.version + 1;
+    db.close();
+    idxDb.delete(dbName);
+    db = await openDb(dbName, storeName, version);
   }
+  const transaction = db.transaction(storeName, mode);
+  return transaction.objectStore(storeName);
+}
 
-  static async putToIdxDbStore<T>(dbName: string, storeName: string, data: any, key?: IDBValidKey | undefined): Promise<T> {
-    return await IdxDB.performStoreOperation<T>(
-      dbName,
-      storeName,
-      'readwrite',
-      (store) => store.put(data, key)
-    );
-  }
+// Generic function to perform an operation on the store
+async function performStoreOperation<T>(
+  dbName: string,
+  storeName: string,
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore) => IDBRequest
+): Promise<T> {
+  const store = await openStore(dbName, storeName, mode);
+  return new Promise((resolve, reject) => {
+    const request = operation(store);
+    request.onsuccess = () => resolve(request.result || {});
+    request.onerror = () => reject(request.error);
+  });
+}
 
-  static async getFromIdxDbStore<T>(dbName: string, storeName: string, key: IDBValidKey): Promise<T> {
-    return await IdxDB.performStoreOperation<T>(
-      dbName,
-      storeName,
-      'readonly',
-      (store) => store.get(key)
-    );
-  }
+async function putToIdxDbStore<T>(dbName: string, storeName: string, data: unknown, key?: IDBValidKey): Promise<T> {
+  return await performStoreOperation<T>(
+    dbName,
+    storeName,
+    'readwrite',
+    (store) => store.put(data, key)
+  );
+}
+
+async function getFromIdxDbStore<T>(dbName: string, storeName: string, key: IDBValidKey): Promise<T> {
+  return await performStoreOperation<T>(
+    dbName,
+    storeName,
+    'readonly',
+    (store) => store.get(key)
+  );
 }
 
 const _StorageTypes = {
@@ -823,7 +842,7 @@ async function getStorageItem<T>(storageType: StorageType, key: string, idxDbNam
   } else if (storageType === 'idxDB') {
     if (!idxDbName || !storeName)
       throw new Error('Both idxDbName and storeName are required');
-    value = await IdxDB.getFromIdxDbStore<T>(idxDbName, storeName, key);
+    value = await getFromIdxDbStore<T>(idxDbName, storeName, key);
   }
 
   return value;
@@ -836,7 +855,7 @@ async function setStorageItem<T>(storageType: StorageType, key: string, value: T
   } else if (storageType === 'idxDB') {
     if (!idxDbName || !storeName)
       throw new Error('Both idxDbName and storeName are required');
-    await IdxDB.putToIdxDbStore(idxDbName, storeName, value, key);
+    await putToIdxDbStore(idxDbName, storeName, value, key);
   }
 }
 
@@ -868,48 +887,45 @@ async function getBrowserCity(): Promise<void> {
     populateSearchResults(city);
   }
 }
+const dbName = 'WeatherDB';
+const weatherStoreName = 'WeatherStore';
 
-class ChartDataHandler {
-  private static dbName = 'WeatherDB';
-  private static weatherStoreName = 'WeatherStore';
-
-  static async getChartData(): Promise<void> {
-    const { [allStationsId]: allChart, ...stationsCharts } = stationsChartData;
-    const selectedDatasets = selectedStations.union(selectedYears).union(selectedParams);
-    if (allStations.checked && selectedStations.size > 1) {
-      const cachedDataSets = new Set<string>();
-      deleteUnselected(allChart, cachedDataSets);
-      // Get data for newly selected stations and years
-      if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
-        const { allStationsCommonDates } = await fetchWeatherData(ChartDataHandler.dbName, ChartDataHandler.weatherStoreName);
-        stationsChartData[allStationsId] = new ChartData({ stationId: allStationsId, dates: allStationsCommonDates });
-      }
-    } else {
-      // Check if the datasets for selected stations and years are already rendered
-      const cachedDataSets = new Set<string>();
-      for (const chart of Object.values(stationsCharts))
-        deleteUnselected(chart, cachedDataSets);
-      // Get data for newly selected stations and years
-      if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
-        const { stationsCommonDates } = await fetchWeatherData(ChartDataHandler.dbName, ChartDataHandler.weatherStoreName);
-        for (const stationId of selectedStations)
-          stationsChartData[stationId] = new ChartData({ stationId, dates: stationsCommonDates[stationId] });
-      }
+async function getChartData(): Promise<void> {
+  const { [allStationsId]: allChart, ...stationsCharts } = stationsChartData;
+  const selectedDatasets = selectedStations.union(selectedYears).union(selectedParams);
+  if (allStations.checked && selectedStations.size > 1) {
+    const cachedDataSets = new Set<string>();
+    deleteUnselected(allChart, cachedDataSets);
+    // Get data for newly selected stations and years
+    if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
+      const { allStationsCommonDates } = await fetchWeatherData(dbName, weatherStoreName);
+      stationsChartData[allStationsId] = new ChartData({ stationId: allStationsId, dates: allStationsCommonDates });
     }
-    priorSubmission = thisSubmission;
+  } else {
+    // Check if the datasets for selected stations and years are already rendered
+    const cachedDataSets = new Set<string>();
+    for (const chart of Object.values(stationsCharts))
+      deleteUnselected(chart, cachedDataSets);
+    // Get data for newly selected stations and years
+    if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
+      const { stationsCommonDates } = await fetchWeatherData(dbName, weatherStoreName);
+      for (const stationId of selectedStations)
+        stationsChartData[stationId] = new ChartData({ stationId, dates: stationsCommonDates[stationId] });
+    }
   }
+  priorSubmission = thisSubmission;
 }
 
 function getChartId(stationId: string): string {
   // Generate a unique chart ID based on the station ID and selected years and parameters
-  return stationId + '-' + Array.from(selectedYears.union(selectedParams)).sort().join("-");
+  return `${stationId}-${Array.from(selectedYears.union(selectedParams)).sort().join("-")}`;
 }
 
 async function renderChart(event: Event): Promise<void> {
   event.preventDefault();
   clearSearchResults(false);
   if (!validateSelection()) return;
-  await ChartDataHandler.getChartData();
+  await getChartData();
   warn('Rendering', 'blink');
   if (!canvasContainer) throw new Error('Canvas container is missing');
   selectedCharts.clear(); // Clear previously selected charts
@@ -919,7 +935,7 @@ async function renderChart(event: Event): Promise<void> {
     if (chartId in charts) continue; // Skip if chart already exists
     // Create a new chart for the station
     const stationChartData = stationsChartData[stationId];
-    const title = ['Historic Air Temperatures for ' + stations.getNameOrId(stationId)];
+    const title = [`Historic Air Temperatures for ${stations.getNameOrId(stationId)}`];
     if (stationChartData.datasets.length > 1)
       title.push('Click on the legend icon to deselect/reselect the graph');
     const options = {
@@ -986,8 +1002,10 @@ function createYearSelection(): void {
 
 function warn(message: string, cls: string = ''): void {
   submissionWarning.textContent = message;
-  if (message) submissionWarning.parentElement!.style.visibility = 'visible';
-  else submissionWarning.parentElement!.style.visibility = 'hidden';
+  if (submissionWarning.parentElement)
+    if (message)
+      submissionWarning.parentElement.style.visibility = 'visible';
+    else submissionWarning.parentElement.style.visibility = 'hidden';
   if (cls) submissionWarning.classList.toggle(cls);
 }
 
@@ -1000,26 +1018,25 @@ function getCheckedBoxes(checkBoxContainer: HTMLElement, selected: Set<string>):
   }
 }
 
-function areSetsEqual(setA: Set<any>, setB: Set<any>): boolean {
+function areSetsEqual<T>(setA: Set<T>, setB: Set<T>): boolean {
   if (setA.size !== setB.size) return false;
-  return !Boolean(setA.symmetricDifference(setB).size);
+  return !setA.symmetricDifference(setB).size;
 }
 
-function appendStationWithFlag(element: HTMLElement, stationId: string, name: string = '', country: string = '') {
+function appendStationWithFlag(element: HTMLElement, stationId: string) {
   // Need to use NS (Name Space) version of the createElement for dynamic SVG to work
   if (!element || !stationId) return;
-  country ||= stations.getCountry(stationId);
+  const country = stations.getCountry(stationId);
   if (country) {
-    country = country.toLowerCase();
     const eSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     const eImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
-    const href = formatUnicorn(flagURLTemplate, { country });
+    const href = formatUnicorn(flagURLTemplate, { country: country.toLowerCase() });
     eImage.setAttribute("href", href);
     eSVG.appendChild(eImage);
     element.appendChild(eSVG);
   }
   const eName = document.createElement("span");
-  eName.textContent = name || stations.getNameOrId(stationId);
+  eName.textContent = stations.getNameOrId(stationId);
   element.appendChild(eName);
 }
 
@@ -1028,7 +1045,7 @@ function createStationsCheckboxes(): void {
   // Recreate checkboxes in sorted order every time a new element is inserted.
   stationsCheckboxContainer.innerHTML = '';
   for (const [id, _] of stations.getSortedArrayBy('name')) {
-    const stationCheckboxId = 'station-checkbox-' + id;
+    const stationCheckboxId = `station-checkbox-${id}`;
     const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -1041,7 +1058,8 @@ function createStationsCheckboxes(): void {
     // Append the checkbox item to the checkbox container
     stationsCheckboxContainer.appendChild(checkboxItem);
   };
-  stationsCheckboxContainer.parentElement!.style.visibility = 'visible';
+  if (stationsCheckboxContainer.parentElement)
+    stationsCheckboxContainer.parentElement.style.visibility = 'visible';
 }
 
 async function populateSearchResults(searchString: string): Promise<void> {
@@ -1096,7 +1114,7 @@ async function populateSearchResults(searchString: string): Promise<void> {
     const locationType = this.getAttribute('data-type');
 
     if (locationType === 'place') {
-      const placeURL = formatUnicorn(locationURLTemplate, { id, country: country.toLowerCase() });
+      const placeURL = formatUnicorn(locationURLTemplate, { country: country.toLowerCase(), id });
       // Destructure: take location properties: latitude and longitude from Place 'place' property
       const { place: { location: { latitude, longitude } } } = await fetchJson<{ place: Place }>(placeURL);
       const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, { latitude, longitude });
@@ -1166,7 +1184,7 @@ function clearSearchResults(clearSearchText: boolean = true) {
 }
 
 function _isInteger(val: string | null) {
-  if (val && val.length && /^\s*\d+\s*$/.test(val)) return true;
+  if (val?.length && /^\s*\d+\s*$/.test(val)) return true;
   else return false;
 }
 
@@ -1174,11 +1192,11 @@ function _isInteger(val: string | null) {
 const locationURLTemplate = "https://meteostat.net/props/en/place/${country}/${id}";
 const nearbyStationURLTemplate = "https://d.meteostat.net/app/nearby?lang=en&limit=1&lat=${latitude}&lon=${longitude}";
 const flagURLTemplate = 'https://media.meteostat.net/assets/flags/4x3/${country}.svg';
-const flagImgTemplate = '<img src="' + flagURLTemplate + '"class="country-flag me-2" alt="${country}">';
+const flagImgTemplate = `<img src="${flagURLTemplate}"class="country-flag me-2" alt="\${country}">`;
 const api = "https://d.meteostat.net/app/";
 const locale = "en";
-const autoCompleteURLTemplate = api + "autocomplete?q=${location}&lang=${locale}";
-const stationURLTemplate = api + "proxy/stations/daily?station=${stationId}&start=${start}&end=${end}";
+const autoCompleteURLTemplate = `${api}autocomplete?q=\${location}&lang=\${locale}`;
+const stationURLTemplate = `${api}proxy/stations/daily?station=\${stationId}&start=\${start}&end=\${end}`;
 // Web Elements
 const searchTextInput = document.getElementById("search") as HTMLInputElement;
 const placesSearchContainer = document.getElementById('places-search-container') as HTMLDivElement;
@@ -1200,7 +1218,7 @@ allStations.addEventListener('change', switchChartType);
 searchTextInput.addEventListener("input", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
 // searchTextInput.addEventListener("focus", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
 // searchTextInput.addEventListener("blur", async function () { clearSearchResults(false); });
-searchTextInput.addEventListener('keydown', async function (event) {
+searchTextInput.addEventListener('keydown', async (event) => {
   if (event.key === 'Escape') clearSearchResults();
   if (event.key === 'Enter' && document.activeElement === searchTextInput) await populateSearchResults(searchTextInput.value);
 });
@@ -1230,7 +1248,7 @@ const stationsChartData: StationsChartData = {};
 let updatingSearchResults = false;
 
 // Main execution
-document.addEventListener('DOMContentLoaded', async function () {
+document.addEventListener('DOMContentLoaded', async () => {
   clearSearchResults();
   createYearSelection();
   await getBrowserCity();
