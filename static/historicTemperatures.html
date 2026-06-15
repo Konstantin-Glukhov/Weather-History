@@ -52,7 +52,6 @@
               <input type="checkbox" id="dailyHigh" value="tmax" checked>
               <label for="dailyHigh">Daily High</label>
             </div>
-            <button type="submit" class="bg-blue">Submit</button>
             <div>
               <input type="checkbox" id="dailyLow" value="tmin" checked>
               <label for="dailyLow">Daily Low</label>
@@ -62,7 +61,7 @@
             <span id="submissionWarning" class="warning"></span>
           </div>
         </div>
-        <div>
+        <div style="display: grid">
           <div>
             <h6>Enter Years Manually</h6>
             <textarea id="customInput" style="margin-top: 2%;"></textarea>
@@ -71,6 +70,7 @@
             <input type="checkbox" id="all-stations" disabled>
             <label for="all-stations">All Stations in One Graph</label>
           </div>
+          <!-- <button type="submit" class="bg-blue" disabled>Submit</button> -->
         </div>
       </div>
     </form>

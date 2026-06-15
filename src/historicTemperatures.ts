@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: valid use case
+
 /*
 Use interface if you’re defining the shape of an object or class that might
 extend other interfaces.  Use type when you want to work with more complex types
@@ -8,14 +10,33 @@ type ApiResponse<T> = {
 };
 */
 
-// biome-ignore-all lint/suspicious/noTemplateCurlyInString: valid use case
+type EC<E extends Error> = abstract new (...args: string[]) => E;
+type Result<T, E extends Error> = { ok: true; value: T } | { ok: false; error: E };
+
+function isInstanceOf<E extends Error>(error: unknown, constructors: EC<E>[] | undefined): error is E {
+  if (!constructors) return false;
+  return constructors.some((E) => error instanceof E);
+}
+
+async function catchErrorResult<T, E extends Error>(
+  promise: Promise<T>,
+  errorsToCatch: EC<E>[] = [Error as unknown as EC<E>],
+): Promise<Result<T, E>> {
+  try {
+    const value = await promise;
+    return { ok: true, value };
+  } catch (error) {
+    if (isInstanceOf(error, errorsToCatch)) return { ok: false, error };
+    throw error;
+  }
+}
 
 interface ApiResponse<T> {
   data: T;
 }
 
 class WeatherParameters {
-  static keys = ['tmax', 'tmin'] as const;
+  static keys = ["tmax", "tmin"] as const;
 
   tmax: number | undefined = undefined;
   tmin: number | undefined = undefined;
@@ -34,13 +55,14 @@ class WeatherParameters {
   constructor(src: Partial<WeatherParameters> = {}) {
     // for (const key of Object.keys(this))
     for (const key of WeatherParameters.keys)
-      if (key in src && src[key] != null) // Check if the key exists in source and is not null
+      if (key in src && src[key] != null)
+        // Check if the key exists in source and is not null
         this[key] = src[key];
   }
-};
+}
 
 type SourceData = {
-  date?: string
+  date?: string;
 } & WeatherParameters;
 
 async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -49,7 +71,7 @@ async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> 
   let json: T;
 
   if (contentType?.includes("application/json")) {
-    json = await response.json() as T;
+    json = (await response.json()) as T;
   } else if (contentType?.includes("text/")) {
     const text = await response.text();
     json = JSON.parse(text) as T;
@@ -60,15 +82,8 @@ async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> 
 
 type WeatherData = {
   // Object with short date (mm-dd) as key and weather parameters as value
-  [shortDate: string]: WeatherParameters
-
+  [shortDate: string]: WeatherParameters;
 };
-
-function _removeNullsFromWeatherData(data: WeatherData): void {
-  // remove object properties with all null sub-object properties
-  for (const [date, parameters] of Object.entries(data))
-    if (allValuesAreMissing(parameters)) delete data[date];
-}
 
 type YearData = {
   // Object with year as key and WeatherData as value
@@ -93,15 +108,15 @@ class ChartDataset {
     // Remove punctuation and whitespace characters, and everything after them, from the station name
     let rgb: string;
     const stationName = stations.getNameOrId(stationId);
-    const yearParam = `${year} ${weatherParameter.substring(1) === 'max' ? 'High' : 'Low'}`;
-    if (type === 'all') {
+    const yearParam = `${year} ${weatherParameter.substring(1) === "max" ? "High" : "Low"}`;
+    if (type === "all") {
       rgb = getRGBValue(stationId, yearParam);
       this.label = `${stationName} ${yearParam}`; // Label for all stations is station name + year parameter
     } else {
-      rgb = getRGBValue('27500', yearParam); // Use a fixed station ID for single station color
+      rgb = getRGBValue("27500", yearParam); // Use a fixed station ID for single station color
       this.label = yearParam; // Label for single station is year + weather parameter
     }
-    this.data = dates.map(date => stations.getStationYearWeatherParameter(stationId, year, date, weatherParameter));
+    this.data = dates.map((date) => stations.getStationYearWeatherParameter(stationId, year, date, weatherParameter));
     this.borderColor = rgb;
     this.backgroundColor = rgb;
     // Custom properties
@@ -111,7 +126,7 @@ class ChartDataset {
     this.weatherParameter = weatherParameter;
     this.datasetId = new Set<string>([stationId, year, weatherParameter]);
   }
-};
+}
 
 class ChartData {
   labels: Array<string>; // Sorted array of short dates (mm-dd)
@@ -120,40 +135,32 @@ class ChartData {
    * Constructs a ChartData object.
    * @param stationId - The station ID for which to create datasets
    * @param dates - An array of date strings (mm-dd) to use as labels for the chart.
-   * 
+   *
    * If stationId is 'all', creates datasets for each selected station and year, flattening the result.
    * Otherwise creates datasets for the selected years for the given station.
    */
-  constructor({ stationId, dates }: { stationId: string, dates: Array<string> }) {
+  constructor({ stationId, dates }: { stationId: string; dates: Array<string> }) {
     this.labels = dates; // sorted short dates (mm-dd)
     const years = Array.from(selectedYears);
     const weatherParameters = Array.from(selectedParams);
     if (stationId === allStationsId)
-      this.datasets = Array
-        .from(selectedStations)
-        .map(station =>
-          weatherParameters.map(param =>
-            years.map(year =>
-              new ChartDataset('all', param, station, year, dates)
-            )
-          )
-        ).flat(2);
-    else
-      this.datasets = weatherParameters.flatMap(param =>
-        years.map(year =>
-          new ChartDataset('single', param, stationId, year, dates)
+      this.datasets = Array.from(selectedStations)
+        .map((station) =>
+          weatherParameters.map((param) => years.map((year) => new ChartDataset("all", param, station, year, dates))),
         )
+        .flat(2);
+    else
+      this.datasets = weatherParameters.flatMap((param) =>
+        years.map((year) => new ChartDataset("single", param, stationId, year, dates)),
       );
   }
   isLastDate(shortDate: string | string[]): boolean {
     if (this?.labels.length > 0)
-      if (Array.isArray(shortDate))
-        return shortDate.includes(this.labels[this.labels.length - 1]);
-      else
-        return this.labels[this.labels.length - 1] === shortDate;
+      if (Array.isArray(shortDate)) return shortDate.includes(this.labels[this.labels.length - 1]);
+      else return this.labels[this.labels.length - 1] === shortDate;
     return false;
   }
-};
+}
 
 type StationsChartData = { [stationId: string]: ChartData };
 
@@ -168,77 +175,54 @@ declare class Chart {
       type: "line" | "box";
       options: object;
       data: ChartData;
-    }
+    },
   );
 }
 
 type Charts = { [stationId: string]: Chart };
 
 type Place = {
-  "id": "tokyo",
-  "name": "Tokyo",
-  "country": "JP",
-  "region": null,
-  "location": {
-    "latitude": 35.6895,
-    "longitude": 139.6917,
-    "elevation": 44
-  },
-  "timezone": "Asia/Tokyo"
-}
+  id: string;
+  name: string;
+  country: string;
+  region: string;
+  location: {
+    latitude: number;
+    longitude: number;
+    elevation: number;
+  };
+  timezone: string;
+};
 
 type NearbyStation = {
-  "id": "47662",
-  "name": "Tokyo",
-  "elevation": 5,
-  "active": true,
-  "distance": 6808
-}
-
-type AutoComplete = {
-  places?: [
-    {
-      id: "tokyo",
-      country: "JP",
-      name: "Tokyo",
-      region: null,
-    }
-  ];
-  stations?: [
-    {
-      id: "47686",
-      country: "JP",
-      name: "New Tokyo Inter-National Airport",
-      region: "CH",
-      active: true,
-    }
-  ];
-}
+  id: string;
+  name: string;
+  elevation: number;
+  active: boolean;
+  distance: number;
+};
 
 class DateRange {
-  start: string = '';
-  end: string = '';
+  start: string = "";
+  end: string = "";
 }
 
 class Station {
-  // Station object
   name: string;
   country: string;
   region: string | null;
   active: boolean;
-  data?: YearData; // Object with year as key and WeatherData as value
-  constructor({ name, country, region, active, data = {} }: Station) {
+  data?: YearData;
+
+  constructor({ name, country, region, active, data = {} }: Omit<Station, "get">) {
     this.name = name.replace(/[\p{P}\p{Z}]+.*$/gu, "");
     this.country = country;
     this.region = region ?? null;
-    this.active = active ?? false;
+    this.active = active;
     this.data = data;
   }
-
-  // Purely typed dynamic getter using generics
-  get?<K extends keyof Station>(property: K): Station[K] | undefined {
-    if (property in this)
-      return this[property];
+  get<K extends keyof Omit<Station, "get">>(property: K): Station[K] {
+    return this[property];
   }
 }
 
@@ -248,7 +232,7 @@ class Stations {
 
   [Symbol.iterator](): Iterator<Record<string, Station>> {
     // Only grab keys that map to actual Station instances, skipping methods
-    const keys: string[] = Object.keys(this).filter(key => this[key] instanceof Station);
+    const keys: string[] = Object.keys(this).filter((key) => this[key] instanceof Station);
     let index = 0;
     return {
       next: (): IteratorResult<Record<string, Station>> => {
@@ -259,14 +243,13 @@ class Stations {
           return { value, done: false };
         }
         return { value: undefined, done: true };
-      }
+      },
     };
   }
 
   get(id: string): Station | undefined {
-    const station = this[id];
-    if (station instanceof Station)
-      return station;
+    const value = this[id];
+    return value instanceof Station ? value : undefined;
   }
 
   upsert(id: string, station: Station): void {
@@ -293,8 +276,7 @@ class Stations {
     // Check if the station has weather data for a given year.
     // Returns true if the station ID and year exist in the data.
     const station = this.get(id);
-    if (station?.data)
-      return station.data[year] && Object.keys(station.data[year]).length > 0;
+    if (station?.data) return station.data[year] && Object.keys(station.data[year]).length > 0;
     return false;
   }
   getStationYearData(id: string, year: string): WeatherData {
@@ -328,30 +310,20 @@ class Stations {
         const aValue = a[property];
         const bValue = b[property];
 
-        if (typeof aValue === 'string' && typeof bValue === 'string')
-          return aValue.localeCompare(bValue);
-        if (typeof aValue === 'number' && typeof bValue === 'number')
-          return aValue - bValue;
+        if (typeof aValue === "string" && typeof bValue === "string") return aValue.localeCompare(bValue);
+        if (typeof aValue === "number" && typeof bValue === "number") return aValue - bValue;
         return 0;
       });
-  }
-  getStations(filter: string[] | Set<string> = []): Stations {
-    // This method returns a shallow copy of the stations object but does not provide iteration capabilities.
-    const length = filter instanceof Set ? filter.size : filter.length;
-    if (!length) return { ...this };
-    const filteredStations: Stations = new Stations();
-    for (const id of filter)
-      if (this[id])
-        filteredStations[id] = this[id];
-    return filteredStations;
   }
 }
 
 function formatUnicorn(str: string, params: Record<string, unknown>): string {
-  return str.replace(/\$\{([^}]+)\}/g, (_, key) => {
-    // String template replacement implicitly handles string coercion safely
-    return key in params ? String(params[key]) : '';
-  }).trim();
+  return str
+    .replace(/\$\{([^}]+)\}/g, (_, key) => {
+      // String template replacement implicitly handles string coercion safely
+      return key in params ? String(params[key]) : "";
+    })
+    .trim();
 }
 
 function getRGBValue(stationId: string, year: string): string {
@@ -379,7 +351,7 @@ function getRGBValue(stationId: string, year: string): string {
 
   // Applying djb2 hash algorithm to the input string
   for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash = (hash << 5) - hash + str.charCodeAt(i);
     hash |= 0;
   }
 
@@ -389,9 +361,9 @@ function getRGBValue(stationId: string, year: string): string {
   hash = (hash >> 16) ^ hash;
 
   // Introduce more variability between year and station
-  const r = (hash & 0xFF0000) >> 16;
-  const g = (hash & 0x00FF00) >> 8;
-  const b = (hash & 0x0000FF);
+  const r = (hash & 0xff0000) >> 16;
+  const g = (hash & 0x00ff00) >> 8;
+  const b = hash & 0x0000ff;
 
   // Apply small variations to ensure perceptible differences
   // Increase the range of each channel slightly
@@ -405,25 +377,30 @@ function getRGBValue(stationId: string, year: string): string {
 
 function allValuesAreMissing<T extends object>(obj: T, keys: Array<keyof T> = []): boolean {
   // Use Object.keys if no specific keys array is supplied
-  const targetKeys = keys.length ? keys : Object.keys(obj) as Array<keyof T>;
+  const targetKeys = keys.length ? keys : (Object.keys(obj) as Array<keyof T>);
 
   if (targetKeys.length === 0) return false;
 
-  for (const key of targetKeys)
-    if (obj[key] != null)
-      return false;
+  for (const key of targetKeys) if (obj[key] != null) return false;
 
   return true;
 }
 
-function findOrFillMissingDatesData(year: string, dateRange: DateRange, data: WeatherData, missingData?: WeatherData): DateRange[] {
+function findOrFillMissingDatesData(
+  year: string,
+  dateRange: DateRange,
+  data: WeatherData,
+  missingData?: WeatherData,
+): DateRange[] {
   if (!data || !Object.keys(data).length) return [dateRange]; // If no data, return supplied date range as missing
   const missingRanges: DateRange[] = [];
-  if (missingData && dateRange.end in missingData && (
-    (selectedYears.has(todayYear) && dateRange.end === todayDate)
-    ||
-    (!selectedYears.has(todayYear) && dateRange.end === '12-31')
-  )) return missingRanges; // If the end date is in data, return empty array
+  if (
+    missingData &&
+    dateRange.end in missingData &&
+    ((selectedYears.has(todayYear) && dateRange.end === todayDate) ||
+      (!selectedYears.has(todayYear) && dateRange.end === "12-31"))
+  )
+    return missingRanges; // If the end date is in data, return empty array
   const startDate = new Date(`${year}-${dateRange.start}`);
   const endDate = new Date(`${year}-${dateRange.end}`);
   let missingRange: DateRange = new DateRange();
@@ -451,7 +428,7 @@ function findOrFillMissingDatesData(year: string, dateRange: DateRange, data: We
 function ZScoreOutliers(weatherParameters: WeatherParameters[], threshold: number = 3): void {
   for (const key of WeatherParameters.keys) {
     // Step 1: Calculate the Mean of the data
-    const data = weatherParameters.map(parameters => parameters[key]).filter(value => value !== undefined);
+    const data = weatherParameters.map((parameters) => parameters[key]).filter((value) => value !== undefined);
     const mean = data.reduce((sum, value) => sum + value, 0) / data.length;
     // Step 2: Calculate the Standard Deviation of the data
     const variance = data.reduce((sum, value) => sum + (value - mean) ** 2, 0) / data.length;
@@ -459,51 +436,9 @@ function ZScoreOutliers(weatherParameters: WeatherParameters[], threshold: numbe
     // Step 3: Calculate the Z-score for each data point
     for (const parameters of weatherParameters) {
       if (parameters[key] === undefined || standardDeviation === 0) continue;
-      if (Math.abs(parameters[key] - mean) / standardDeviation > threshold)
-        parameters[key] = undefined; // Undefine the outlier
+      if (Math.abs(parameters[key] - mean) / standardDeviation > threshold) parameters[key] = undefined; // Undefine the outlier
     }
   }
-}
-
-function _modifiedZScoreOutliers(weatherParameters: WeatherParameters[], threshold: number = 3.5): void {
-  for (const key of WeatherParameters.keys) {
-    // Step 1: Calculate the Median
-    const sorted = weatherParameters.map(parameters => parameters[key]).filter(value => value !== undefined).sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    // Step 2: Calculate the Median Absolute Deviation (MAD)
-    const mad = sorted
-      .map(value => Math.abs(value - median))  // Absolute deviation from the median
-      .sort((a, b) => a - b);  // Sort the absolute deviations
-    const madMedian = mad[Math.floor(mad.length / 2)];
-    // Step 3: Calculate the Modified Z-Score for each data point
-    for (const parameters of weatherParameters) {
-      if (parameters[key] === undefined || madMedian === 0) continue;
-      if (0.6745 * Math.abs(parameters[key] - median) / madMedian > threshold)
-        parameters[key] = undefined; // Undefine the outlier
-    }
-  }
-}
-
-function _IQROutliers(weatherParameters: WeatherParameters[], k: number = 1.5): void {
-  // Undefine outliers using the Interquartile Range (IQR) method
-  for (const key of WeatherParameters.keys) {
-    const sorted = weatherParameters.map(parameters => parameters[key]).filter(value => value !== undefined).sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
-    const iqr = q3 - q1;
-    const lower = q1 - k * iqr;
-    const upper = q3 + k * iqr;
-    for (const parameters of weatherParameters) {
-      const value = parameters[key];
-      if (value !== undefined && (value < lower || value > upper))
-        parameters[key] = undefined; // Undefine the outlier
-    }
-  }
-}
-
-function _groupByMonth(date: string): number {
-  const month = date.substring(0, 1);  // Extract the month part of the date (mm-dd)
-  return parseInt(month, 10);  // Return the month as the group index (e.g., 1 for January)
 }
 
 function outliersByGroup(weatherData: WeatherData): void {
@@ -511,36 +446,50 @@ function outliersByGroup(weatherData: WeatherData): void {
   const sortedData = Object.entries(weatherData).sort((a, b) => a[0].localeCompare(b[0]));
 
   // Group data by the index defined by the callback
-  const groupedData = sortedData.reduce((acc, [_, parameters], index) => {
-    const groupIndex = Math.floor(index / 30); // Group by every 30 entries (based on array index)
+  const groupedData = sortedData.reduce(
+    (acc, [_, parameters], index) => {
+      const groupIndex = Math.floor(index / 30); // Group by every 30 entries (based on array index)
 
-    // Ensure the groupIndex exists in the accumulator
-    if (!(groupIndex in acc)) acc[groupIndex] = [];
+      // Ensure the groupIndex exists in the accumulator
+      if (!(groupIndex in acc)) acc[groupIndex] = [];
 
-    // Push the parameters for the current entry into the correct group
-    acc[groupIndex].push(parameters);
+      // Push the parameters for the current entry into the correct group
+      acc[groupIndex].push(parameters);
 
-    return acc;
-  }, {} as { [groupIndex: number]: WeatherParameters[] });
+      return acc;
+    },
+    {} as { [groupIndex: number]: WeatherParameters[] },
+  );
 
   // Detect outliers for each group
   for (const [_, parameters] of Object.entries(groupedData)) {
     const groupParameters = parameters as WeatherParameters[];
-    ZScoreOutliers(groupParameters, 3.5);  // You can use modifiedZScoreOutliers or IQROutliers as well
+    ZScoreOutliers(groupParameters, 3.5); // You can use modifiedZScoreOutliers or IQROutliers as well
     // modifiedZScoreOutliers(groupParameters, 3.5);
     // IQROutliers(groupParameters, 1.5);
   }
 }
 
-async function fetchStationYearData(idxDbName: string, storeName: string, stationId: string, year: string, startDate: string, endDate: string): Promise<void> {
+async function fetchStationYearData(
+  idxDbName: string,
+  storeName: string,
+  stationId: string,
+  year: string,
+  startDate: string,
+  endDate: string,
+): Promise<void> {
   // For the given station ID and year, try to get weather data from local storage, if not present get via API.
   // Save obtained data into stations cache object by reference getYearData(stationId, year).
   const stationYearCache: WeatherData = stations.getStationYearData(stationId, year); // Get station year cache reference
-  const missingCache: DateRange[] = findOrFillMissingDatesData(year, { start: startDate, end: endDate }, stationYearCache);
+  const missingCache: DateRange[] = findOrFillMissingDatesData(
+    year,
+    { start: startDate, end: endDate },
+    stationYearCache,
+  );
   if (!missingCache.length) return;
   let missingLocalStorage: DateRange[] = [];
   const stationYear = `${stationId}-${year}`;
-  const stationYearStore: WeatherData = await getStorageItem<WeatherData>('idxDB', stationYear, idxDbName, storeName);
+  const stationYearStore: WeatherData = await getStorageItem<WeatherData>("idxDB", stationYear, idxDbName, storeName);
   if (Object.keys(stationYearStore).length) {
     // Populate missing cache from local storage
     for (const missingRange of missingCache)
@@ -548,7 +497,7 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
     if (!missingLocalStorage.length) return; // If no missing dates in local storage, exit
   } else missingLocalStorage = missingCache;
   // If the date range is not in the cache, fetch it from the API
-  const promises = missingLocalStorage.map(async missingRange => {
+  const promises = missingLocalStorage.map(async (missingRange) => {
     const start = `${year}-${missingRange.start}`;
     const end = `${year}-${missingRange.end}`;
     const url = formatUnicorn(stationURLTemplate, { stationId, start, end });
@@ -561,24 +510,24 @@ async function fetchStationYearData(idxDbName: string, storeName: string, statio
     const { data: sourceData } = await fetchJson<ApiResponse<SourceData[]>>(url);
     if (sourceData.length > 0) {
       for (const row of sourceData)
-        if (row.date)
-          stationYearCache[row.date.substring(5, 10)] = new WeatherParameters(row);
+        if (row.date) stationYearCache[row.date.substring(5, 10)] = new WeatherParameters(row);
       // undefineOutliersIQR(Object.values(stationYearCache), 2.0); // Undefine outliers using the Interquartile Range (IQR) method
       outliersByGroup(stationYearCache); // Undefine outliers using the Interquartile Range (IQR) method
       for (const date of Object.keys(stationYearCache)) {
-        if (allValuesAreMissing(stationYearCache[date]))
-          delete stationYearCache[date];
-        else
-          stationYearStore[date] = stationYearCache[date]; // Copy the weather parameters to the store
+        if (allValuesAreMissing(stationYearCache[date])) delete stationYearCache[date];
+        else stationYearStore[date] = stationYearCache[date]; // Copy the weather parameters to the store
       }
       // save the fetched data to indexedDB
-      await setStorageItem('idxDB', stationYear, stationYearStore, idxDbName, storeName);
+      await setStorageItem("idxDB", stationYear, stationYearStore, idxDbName, storeName);
     }
   });
   await Promise.all(promises);
 }
 
-function getCommonDates(): { stationsCommonDates: { [id: string]: Array<string> }, allStationsCommonDates: string[] } {
+function getCommonDates(): {
+  stationsCommonDates: { [id: string]: Array<string> };
+  allStationsCommonDates: string[];
+} {
   // Get common dates across all years and their data for each selected station
   // Note: this function assumes that stationsCache has been populated with data
   // for selected stations and years. Yeach year may have different dates, so we
@@ -629,20 +578,10 @@ function getCommonDates(): { stationsCommonDates: { [id: string]: Array<string> 
     .map(stationId => stationsCommonDates[stationId])
     .reduce((acc, cur) => acc.intersection(cur));
   */
-  return { stationsCommonDates: stationsCommonDatesArray, allStationsCommonDates: Array.from(allStationsCommonDates).sort() };
-}
-
-function updateCustomYears(): boolean {
-  const years = customInput.value.split(/\s+/).filter(x => x);
-  if (years.some(year => year && (year > todayYear || !year.match(/\d{4}/)))) {
-    warn("Provide valid years");
-    customInput.focus();
-    return false;
-  }
-  for (const year of years) {
-    selectedYears.add(year);
-  }
-  return true;
+  return {
+    stationsCommonDates: stationsCommonDatesArray,
+    allStationsCommonDates: Array.from(allStationsCommonDates).sort(),
+  };
 }
 
 async function applyStationSelection(event: Event) {
@@ -659,7 +598,7 @@ async function applyStationSelection(event: Event) {
 
 async function switchChartType(event: Event) {
   if (selectedStations.size <= 1 && allStations.checked) {
-    warn('Select more than one station to show all stations in a single chart');
+    warn("Select more than one station to show all stations in a single chart");
     allStations.checked = false;
     searchTextInput.focus();
     return;
@@ -670,21 +609,25 @@ async function switchChartType(event: Event) {
 
 function deleteUnselected(chart: ChartData, cachedDataSets: Set<string>): void {
   // remove unselected stations/years from datasets
-  if (chart && (
-    (selectedYears.has(todayYear) && chart.isLastDate([yesterdayDate, todayDate]))
-    ||
-    (!selectedYears.has(todayYear) && chart.isLastDate('12-31'))
-  ))
+  if (
+    chart &&
+    ((selectedYears.has(todayYear) && chart.isLastDate([yesterdayDate, todayDate])) ||
+      (!selectedYears.has(todayYear) && chart.isLastDate("12-31")))
+  )
     for (let i = chart.datasets.length - 1; i >= 0; i--) {
       const datasetId = chart.datasets[i].datasetId;
-      if (datasetId.isSubsetOf(thisSubmission))
-        cachedDataSets = datasetId.union(cachedDataSets);
-      else
-        chart.datasets.splice(i, 1); // del array element by index
+      if (datasetId.isSubsetOf(thisSubmission)) for (const id of datasetId) cachedDataSets.add(id);
+      else chart.datasets.splice(i, 1); // del array element by index
     }
 }
 
-async function fetchWeatherData(idxDbName: string, storeName: string): Promise<{ stationsCommonDates: { [id: string]: Array<string> }, allStationsCommonDates: string[] }> {
+async function fetchWeatherData(
+  idxDbName: string,
+  storeName: string,
+): Promise<{
+  stationsCommonDates: { [id: string]: Array<string> };
+  allStationsCommonDates: string[];
+}> {
   // Get weather data for all selectedStations and selectedYears and save them in stations cache object.
   const promises: Promise<void>[] = [];
   const endDate = selectedYears.has(todayYear) ? todayDate : "12-31";
@@ -693,9 +636,9 @@ async function fetchWeatherData(idxDbName: string, storeName: string): Promise<{
     for (const year of selectedYears)
       promises.push(fetchStationYearData(idxDbName, storeName, stationId, year, startDate, endDate));
   try {
-    warn('Fetching data', 'blink');
+    warn("Fetching data", { cls: "blink", state: "on" });
     await Promise.all(promises);
-    warn('');
+    warn("clear", { cls: "blink", state: "off" });
   } catch (error) {
     console.error("Error fetching data:", error);
   }
@@ -716,7 +659,9 @@ async function openDb(dbName: string, storeName: string, version: number = 1): P
   let db: IDBDatabase | undefined;
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(dbName, version);
-    request.onerror = () => { reject(request.error); };
+    request.onerror = () => {
+      reject(request.error);
+    };
     request.onupgradeneeded = () => {
       db = request.result;
       // console.log("Upgrade needed indexed DB:", dbName, "Version:", db.version);
@@ -731,11 +676,14 @@ async function openDb(dbName: string, storeName: string, version: number = 1): P
   });
 }
 
-async function openStore(dbName: string, storeName: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
+async function openStore(
+  dbName: string,
+  storeName: string,
+  mode: IDBTransactionMode = "readonly",
+): Promise<IDBObjectStore> {
   let db: IDBDatabase | undefined;
   db = idxDb.get(dbName);
-  if (!db)
-    db = await openDb(dbName, storeName);
+  if (!db) db = await openDb(dbName, storeName);
   if (!db.objectStoreNames.contains(storeName)) {
     const version = db.version + 1;
     db.close();
@@ -751,7 +699,7 @@ async function performStoreOperation<T>(
   dbName: string,
   storeName: string,
   mode: IDBTransactionMode,
-  operation: (store: IDBObjectStore) => IDBRequest
+  operation: (store: IDBObjectStore) => IDBRequest,
 ): Promise<T> {
   const store = await openStore(dbName, storeName, mode);
   return new Promise((resolve, reject) => {
@@ -762,87 +710,84 @@ async function performStoreOperation<T>(
 }
 
 async function putToIdxDbStore<T>(dbName: string, storeName: string, data: unknown, key?: IDBValidKey): Promise<T> {
-  return await performStoreOperation<T>(
-    dbName,
-    storeName,
-    'readwrite',
-    (store) => store.put(data, key)
-  );
+  return await performStoreOperation<T>(dbName, storeName, "readwrite", (store) => store.put(data, key));
 }
 
 async function getFromIdxDbStore<T>(dbName: string, storeName: string, key: IDBValidKey): Promise<T> {
-  return await performStoreOperation<T>(
-    dbName,
-    storeName,
-    'readonly',
-    (store) => store.get(key)
-  );
+  return await performStoreOperation<T>(dbName, storeName, "readonly", (store) => store.get(key));
 }
 
 const _StorageTypes = {
-  localStorage: 'local',
-  idxDB: 'idxDB',
+  localStorage: "local",
+  idxDB: "idxDB",
 } as const;
 
-type StorageType = typeof _StorageTypes[keyof typeof _StorageTypes];
+type StorageType = (typeof _StorageTypes)[keyof typeof _StorageTypes];
 
-async function getStorageItem<T>(storageType: StorageType, key: string, idxDbName?: string, storeName?: string): Promise<T> {
+async function getStorageItem<T>(
+  storageType: StorageType,
+  key: string,
+  idxDbName?: string,
+  storeName?: string,
+): Promise<T> {
   let value: T = {} as T;
 
-  if (storageType === 'local') {
+  if (storageType === "local") {
     const text = localStorage.getItem(key);
-    if (text)
-      value = JSON.parse(text) as T;
-  } else if (storageType === 'idxDB') {
-    if (!idxDbName || !storeName)
-      throw new Error('Both idxDbName and storeName are required');
+    if (text) value = JSON.parse(text) as T;
+  } else if (storageType === "idxDB") {
+    if (!idxDbName || !storeName) throw new Error("Both idxDbName and storeName are required");
     value = await getFromIdxDbStore<T>(idxDbName, storeName, key);
   }
 
   return value;
 }
 
-async function setStorageItem<T>(storageType: StorageType, key: string, value: T, idxDbName?: string, storeName?: string): Promise<void> {
-  if (storageType === 'local') {
+async function setStorageItem<T>(
+  storageType: StorageType,
+  key: string,
+  value: T,
+  idxDbName?: string,
+  storeName?: string,
+): Promise<void> {
+  if (storageType === "local") {
     const text = JSON.stringify(value);
     localStorage.setItem(key, text);
-  } else if (storageType === 'idxDB') {
-    if (!idxDbName || !storeName)
-      throw new Error('Both idxDbName and storeName are required');
+  } else if (storageType === "idxDB") {
+    if (!idxDbName || !storeName) throw new Error("Both idxDbName and storeName are required");
     await putToIdxDbStore(idxDbName, storeName, value, key);
   }
 }
 
 type IPLocation = {
-  city: string | null,
-  expiry: string | null
-}
+  city: string | null;
+  expiry: string | null;
+};
 
 async function getBrowserCity(): Promise<void> {
-  const ipApiUrl = 'https://ipapi.co/json';
-  const key = 'IPCity';
+  const ipApiUrl = "https://ipapi.co/json";
+  const key = "IPCity";
 
   // 1. Retrieve the cached string and parse it back into an object
-  let { city, expiry } = await getStorageItem<IPLocation>('local', key);
+  let { city, expiry } = await getStorageItem<IPLocation>("local", key);
   // 2. Check if cache exists and if the current time is still before expiry
   if (!city || !expiry || todayDate > expiry) {
-    try {
-      ({ city } = await fetchJson<IPLocation>(ipApiUrl));
+    const result = await catchErrorResult(fetchJson<IPLocation>(ipApiUrl));
+    if (result.ok) {
+      city = result.value.city;
       if (city) {
         const location: IPLocation = { city, expiry: tomorrowDate };
-        setStorageItem('local', key, location);
-      } else console.log("'city' is not defined in API response from", ipApiUrl);
-    } catch (error) {
-      console.log("Browser IP location fetch failed:", error);
-    }
-  } else
-    console.log("Using cached location:", city);
+        setStorageItem("local", key, location);
+      } else console.warn("'city' is not defined in API response from", ipApiUrl);
+    } else console.error("Browser IP location fetch failed:", result.error);
+  } else console.info("Using cached location:", city);
   if (city) {
-    populateSearchResults(city);
+    searchTextInput.value = city;
+    populateSearchResults();
   }
 }
-const dbName = 'WeatherDB';
-const weatherStoreName = 'WeatherStore';
+const dbName = "WeatherDB";
+const weatherStoreName = "WeatherStore";
 
 async function getChartData(): Promise<void> {
   const { [allStationsId]: allChart, ...stationsCharts } = stationsChartData;
@@ -853,33 +798,37 @@ async function getChartData(): Promise<void> {
     // Get data for newly selected stations and years
     if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
       const { allStationsCommonDates } = await fetchWeatherData(dbName, weatherStoreName);
-      stationsChartData[allStationsId] = new ChartData({ stationId: allStationsId, dates: allStationsCommonDates });
+      stationsChartData[allStationsId] = new ChartData({
+        stationId: allStationsId,
+        dates: allStationsCommonDates,
+      });
     }
   } else {
     // Check if the datasets for selected stations and years are already rendered
     const cachedDataSets = new Set<string>();
-    for (const chart of Object.values(stationsCharts))
-      deleteUnselected(chart, cachedDataSets);
+    for (const chart of Object.values(stationsCharts)) deleteUnselected(chart, cachedDataSets);
     // Get data for newly selected stations and years
     if (!areSetsEqual(selectedDatasets, cachedDataSets)) {
       const { stationsCommonDates } = await fetchWeatherData(dbName, weatherStoreName);
       for (const stationId of selectedStations)
-        stationsChartData[stationId] = new ChartData({ stationId, dates: stationsCommonDates[stationId] });
+        stationsChartData[stationId] = new ChartData({
+          stationId,
+          dates: stationsCommonDates[stationId],
+        });
     }
   }
-  priorSubmission = thisSubmission;
 }
 
 // Function to set the display state of canvas elements
 function setChartVisibility(chartId: string | Iterable<string>, state: string | boolean): boolean {
   let iter: string[];
-  let display: string
-  if (typeof state === 'boolean') display = state ? 'block' : 'none';
+  let display: string;
+  if (typeof state === "boolean") display = state ? "block" : "none";
   else display = state;
-  if (typeof chartId === 'string') iter = [chartId];
+  if (typeof chartId === "string") iter = [chartId];
   else iter = Array.from(chartId);
   let count = 0;
-  iter.forEach(chart => {
+  iter.forEach((chart) => {
     if (chart in charts) {
       charts[chart].canvas.style.display = display;
       count += 1;
@@ -888,59 +837,69 @@ function setChartVisibility(chartId: string | Iterable<string>, state: string | 
   return count === iter.length; // Return true if all canvases were found and set
 }
 
+// let priorSubmission: Set<string> = new Set();
+
 function getChartId(stationId: string): string {
   // Generate a unique chart ID based on the station ID and selected years and parameters
+  if (!selectedYears.size) throw new Error("Select years to submit");
+  if (!selectedParams.size) throw new Error("Select at least one weather parameter");
   return `${stationId}-${Array.from(selectedYears.union(selectedParams)).sort().join("-")}`;
 }
 
-function validate(): boolean {
-  if (!selectedStations.size) {
-    warn("Select stations to submit");
-    searchTextInput.focus();
-    return false;
+const priorCustomYears: Set<string> = new Set();
+
+function updateCustomYears(event: Event): void {
+  const years = customInput.value.split(/(?:\s+|,)/).filter(Boolean);
+  const valid = years.every((year) => {
+    return /^\d{4}$/.test(year) && year <= todayYear;
+  });
+  if (valid) {
+    for (const year of priorCustomYears) selectedYears.delete(year);
+    for (const year of years) {
+      selectedYears.add(year);
+      priorCustomYears.add(year);
+    }
+    renderChart(event);
   }
-
-  if (!updateCustomYears()) return false;
-
-  if (selectedYears.size === 0) {
-    clearSearchResults(false);
-    warn("Select years to submit");
-    return false;
-  }
-
-  if (selectedParams.size === 0) {
-    warn("Select at least one weather parameter");
-    return false;
-  }
-
-  // thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
-  // thisSubmission.add(allStations.checked ? 'all' : 'single');
-  // if (areSetsEqual(thisSubmission, priorSubmission)) {
-  //   warn("Change your selection to submit");
-  //   return false;
-  // }
-  // priorSubmission = thisSubmission;
-  return true;
 }
 
 async function getSelectedCharts(): Promise<Map<string, string>> {
-  getCheckedBoxes(stationsCheckboxContainer, selectedStations);
-  getCheckedBoxes(yearsCheckboxContainer, selectedYears);
-  getCheckedBoxes(weatherParamContainer, selectedParams);
-
+  warn("clear", { cls: "blink", state: "off" });
+  const allCharts = new Set(Object.keys(charts));
+  setChartVisibility(allCharts, "none"); // hide all charts
   const chartStation: Map<string, string> = new Map<string, string>();
-  if (!selectedYears.size && selectedParams.size) return chartStation;
+  updateCheckBoxSelection(stationsCheckboxContainer, selectedStations);
+  if (!selectedStations.size) {
+    warn("Select stations to submit", { cls: "blink", state: "off" });
+    searchTextInput.focus();
+    return chartStation;
+  }
+  updateCheckBoxSelection(yearsCheckboxContainer, selectedYears);
+  // if (!validateCustomYears()) return chartStation;
+  if (!selectedYears.size) {
+    warn("Select years to submit", { cls: "blink", state: "off" });
+    return chartStation;
+  }
+  updateCheckBoxSelection(weatherParamContainer, selectedParams);
+  if (!selectedParams.size) {
+    warn("Select weather parameters to submit", { cls: "blink", state: "off" });
+    return chartStation;
+  }
+
   selectedCharts.clear();
   for (const stationId of allStations.checked ? [allStationsId] : selectedStations) {
     const chartId = getChartId(stationId);
     selectedCharts.add(chartId);
     chartStation.set(chartId, stationId);
   }
-  const unselectedCharts = new Set(Object.keys(charts)).difference(selectedCharts);
-  setChartVisibility(unselectedCharts, 'none');
-  setChartVisibility(selectedCharts, 'block');
-  if (!validate())
-    chartStation.clear();
+  setChartVisibility(selectedCharts, "block");
+  thisSubmission = selectedStations.union(selectedYears).union(selectedParams);
+  thisSubmission.add(allStations.checked ? "all" : "single");
+  // if (areSetsEqual(thisSubmission, priorSubmission)) {
+  //   warn("Change your selection to submit");
+  //   return false;
+  // }
+  // priorSubmission = thisSubmission;
   return chartStation;
 }
 
@@ -949,24 +908,23 @@ async function renderChart(event: Event): Promise<void> {
   clearSearchResults(false);
   const chartStation = await getSelectedCharts();
   if (!chartStation.size) return;
-  warn('Rendering', 'blink');
+  warn("Rendering", { cls: "blink", state: "on" });
   await getChartData();
-  if (!canvasContainer) throw new Error('Canvas container is missing');
+  if (!canvasContainer) throw new Error("Canvas container is missing");
   for (const [chartId, stationId] of chartStation) {
     const stationChartData = stationsChartData[stationId];
     if (chartId in charts) continue; // Skip if chart already exists
-    if (!stationChartData) throw new Error('Chart data is missing');
+    if (!stationChartData) throw new Error("Chart data is missing");
     // Create a new chart for the station
     const title = [`Historic Air Temperatures for ${stations.getNameOrId(stationId)}`];
-    if (stationChartData.datasets.length > 1)
-      title.push('Click on the legend icon to deselect/reselect the graph');
+    if (stationChartData.datasets.length > 1) title.push("Click on the legend icon to deselect/reselect the graph");
     const options = {
       responsive: true,
       tension: 0.4,
       plugins: {
         title: {
           display: true,
-          text: title
+          text: title,
         },
       },
     };
@@ -977,7 +935,7 @@ async function renderChart(event: Event): Promise<void> {
     //   continue;
     // }
     const canvas = document.createElement("canvas") as HTMLCanvasElement;
-    canvas.setAttribute('id', `canvas - ${stationId} `);
+    canvas.setAttribute("id", `canvas-${stationId}`);
     canvasContainer.appendChild(canvas);
     charts[chartId] = new Chart(canvas, {
       type: "line",
@@ -986,8 +944,8 @@ async function renderChart(event: Event): Promise<void> {
     });
   }
   // Make selected canvas visible
-  setChartVisibility(selectedCharts, 'block');
-  warn('');
+  setChartVisibility(selectedCharts, "block");
+  warn("clear", { cls: "blink", state: "off" });
 }
 
 function createYearSelection(): void {
@@ -999,11 +957,11 @@ function createYearSelection(): void {
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.id = `year${year} `;
+    checkbox.id = `year${year}`;
     checkbox.value = year.toString();
 
     const label = document.createElement("label");
-    label.htmlFor = `year${year} `;
+    label.htmlFor = `year${year}`;
     label.innerText = year.toString();
 
     // Append the checkbox and label to the checkbox item
@@ -1013,24 +971,27 @@ function createYearSelection(): void {
     // Append the checkbox item to the checkbox container
     yearsCheckboxContainer?.appendChild(checkboxItem);
   }
-  yearsCheckboxContainer.addEventListener('change', renderChart);
+  yearsCheckboxContainer.addEventListener("change", renderChart);
 }
 
-function warn(message: string, cls: string = ''): void {
+function warn(message: string, options?: { cls?: string; state: "off" | "on" | "toggle" }): void {
   submissionWarning.textContent = message;
   if (submissionWarning.parentElement)
-    if (message)
-      submissionWarning.parentElement.style.visibility = 'visible';
-    else submissionWarning.parentElement.style.visibility = 'hidden';
-  if (cls) submissionWarning.classList.toggle(cls);
+    submissionWarning.parentElement.style.visibility = message !== "clear" ? "visible" : "hidden";
+  if (options?.cls) {
+    const { cls, state } = options;
+    if (state === "off") submissionWarning.classList.remove(cls);
+    else if (state === "on") submissionWarning.classList.add(cls);
+    else submissionWarning.classList.toggle(cls);
+  }
 }
 
-function getCheckedBoxes(checkBoxContainer: HTMLElement, selected: Set<string>): void {
-  selected.clear();
-  for (const id of Array.from(checkBoxContainer.querySelectorAll('input[type="checkbox"]:checked'))
-    .filter((checkbox): checkbox is HTMLInputElement => checkbox instanceof HTMLInputElement)
-    .map((checkbox) => checkbox.value)) {
-    selected.add(id);
+function updateCheckBoxSelection(checkBoxContainer: HTMLElement, selected: Set<string>): void {
+  for (const checkbox of checkBoxContainer.querySelectorAll('input[type="checkbox"]')) {
+    if (!(checkbox instanceof HTMLInputElement)) continue;
+
+    if (checkbox.checked) selected.add(checkbox.value);
+    else selected.delete(checkbox.value);
   }
 }
 
@@ -1046,7 +1007,9 @@ function appendStationWithFlag(element: HTMLElement, stationId: string) {
   if (country) {
     const eSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     const eImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
-    const href = formatUnicorn(flagURLTemplate, { country: country.toLowerCase() });
+    const href = formatUnicorn(flagURLTemplate, {
+      country: country.toLowerCase(),
+    });
     eImage.setAttribute("href", href);
     eSVG.appendChild(eImage);
     element.appendChild(eSVG);
@@ -1059,8 +1022,8 @@ function appendStationWithFlag(element: HTMLElement, stationId: string) {
 function createStationsCheckboxes(): void {
   if (!stationsCheckboxContainer) return;
   // Recreate checkboxes in sorted order every time a new element is inserted.
-  stationsCheckboxContainer.innerHTML = '';
-  for (const [id, _] of stations.getSortedArrayBy('name')) {
+  stationsCheckboxContainer.innerHTML = "";
+  for (const [id, _] of stations.getSortedArrayBy("name")) {
     const stationCheckboxId = `station-checkbox-${id}`;
     const checkboxItem = document.createElement("div"); // Create a wrapper for checkbox and label
     const checkbox = document.createElement("input");
@@ -1073,119 +1036,154 @@ function createStationsCheckboxes(): void {
     appendStationWithFlag(checkboxItem, id);
     // Append the checkbox item to the checkbox container
     stationsCheckboxContainer.appendChild(checkboxItem);
-  };
-  if (stationsCheckboxContainer.parentElement)
-    stationsCheckboxContainer.parentElement.style.visibility = 'visible';
+  }
+  if (stationsCheckboxContainer.parentElement) stationsCheckboxContainer.parentElement.style.visibility = "visible";
 }
 
-async function populateSearchResults(searchString: string): Promise<void> {
-  searchTextInput.value = searchString; // Set the input value to the search string
+function setSpinnerOrLens(mode: "on" | "off") {
+  if (mode === "on") {
+    // Show loading spinner, hide magnifying glass
+    loadingSpinner.style.display = "block";
+    magnifyingGlass.style.display = "none";
+  } else {
+    // Hide loading spinner, show magnifying glass again
+    loadingSpinner.style.display = "none";
+    magnifyingGlass.style.display = "block";
+  }
+}
+
+async function selectClickedLocation(this: HTMLElement, event: MouseEvent): Promise<void> {
+  // this refers to the clicked element
+  clearSearchResults(false);
+  event.preventDefault(); // Prevent the default action (navigation)
+  let id: string | null = this.getAttribute("data-id");
+  let name: string | null = this.getAttribute("data-name");
+  const country: string | null = this.getAttribute("data-country");
+  const region: string | null = this.getAttribute("data-region");
+  const active: boolean = this.getAttribute("data-active") === "true";
+  if (id == null || name == null || country == null) return;
+  const locationType = this.getAttribute("data-type");
+
+  if (locationType === "place") {
+    const placeURL = formatUnicorn(locationURLTemplate, {
+      country: country.toLowerCase(),
+      id,
+    });
+    // Destructure: take location properties: latitude and longitude from Place 'place' property
+    const {
+      place: {
+        location: { latitude, longitude },
+      },
+    } = await fetchJson<{ place: Place }>(placeURL);
+    const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, {
+      latitude,
+      longitude,
+    });
+    // Destructure: take properties id and name from NearbyStation 'data' property
+    ({
+      data: { id, name },
+    } = await fetchJson<ApiResponse<NearbyStation>>(nearbyStationURL));
+  }
+  stations.upsert(id, new Station({ name, country, region, active }));
+  selectedStations.add(id);
+  createStationsCheckboxes();
+  applyStationSelection(event); // Apply selection to the checkboxes
+  searchTextInput.focus();
+}
+
+async function populateSearchResults(): Promise<void> {
+  const searchString = searchTextInput.value;
   if (updatingSearchResults) return;
   clearSearchResults(false);
-  if (searchString.length <= 2)
-    return;
+  if (searchString.length <= 2) return;
   updatingSearchResults = true;
-  const url = formatUnicorn(autoCompleteURLTemplate, { location: searchString, locale: locale });
-  let data: AutoComplete = {};
-  try {
-    // Show loading spinner, hide magnifying glass
-    magnifyingGlass.style.display = 'none';
-    loadingSpinner.style.display = 'block';
-    // fetch data
-    ({ data } = await fetchJson<ApiResponse<AutoComplete>>(url, { signal: abortController.signal }));
-    // Hide loading spinner, show magnifying glass again
-    loadingSpinner.style.display = 'none';
-    magnifyingGlass.style.display = 'block';
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+  const url = formatUnicorn(autoCompleteURLTemplate, {
+    location: searchString,
+    locale: locale,
+  });
+
+  type AutoComplete = {
+    places?: ({ id: string } & Pick<Station, "name" | "country" | "region">)[];
+    stations?: ({ id: string } & Omit<Station, "get" | "data">)[];
+  };
+
+  setSpinnerOrLens("on");
+  const result = await catchErrorResult(
+    fetchJson<ApiResponse<AutoComplete>>(url, {
+      signal: abortController.signal,
+    }),
+  );
+  setSpinnerOrLens("off");
+  if (!result.ok) {
+    if (result.error.name === "AbortError") {
       updatingSearchResults = false;
       return;
     }
+    throw result.error;
   }
+
+  const data = result.value.data;
+
   if (Object.keys(data).length === 0) {
     updatingSearchResults = false;
     return;
   }
 
-  const locationClass = 'search-result list-group-item list-group-item-action';
-  const searchHeaderClass = "search-category list-group-item fw-bold";
+  const locationClass = "search-result list-group-item list-group-item-action";
 
   function insertHeader(container: HTMLElement, text: string) {
-    const header = document.createElement('div');
-    header.className = searchHeaderClass;
+    const header = document.createElement("div");
+    header.className = "search-category list-group-item fw-bold";
     header.innerText = text;
     container.appendChild(header);
-  }
-
-  async function selectClickedLocation(this: HTMLElement, event: MouseEvent): Promise<void> {
-    // this refers to the clicked element
-    clearSearchResults(false);
-    event.preventDefault(); // Prevent the default action (navigation)
-    let id: string | null = this.getAttribute('data-id');
-    let name: string | null = this.getAttribute('data-name');
-    const country: string | null = this.getAttribute('data-country');
-    const region: string | null = this.getAttribute('data-region');
-    const active: boolean = (this.getAttribute('data-active') === 'true');
-    if (id == null || name == null || country == null) return;
-    const locationType = this.getAttribute('data-type');
-
-    if (locationType === 'place') {
-      const placeURL = formatUnicorn(locationURLTemplate, { country: country.toLowerCase(), id });
-      // Destructure: take location properties: latitude and longitude from Place 'place' property
-      const { place: { location: { latitude, longitude } } } = await fetchJson<{ place: Place }>(placeURL);
-      const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, { latitude, longitude });
-      // Destructure: take properties id and name from NearbyStation 'data' property
-      ({ data: { id, name } } = await fetchJson<ApiResponse<NearbyStation>>(nearbyStationURL));
-    }
-    stations.upsert(id, new Station({ name, country, region, active }));
-    selectedStations.add(id);
-    createStationsCheckboxes();
-    applyStationSelection(event); // Apply selection to the checkboxes
-    searchTextInput.focus();
   }
 
   // Add Places
   // Cannot use places because there is no API to find the nearest station
   if (placesSearchContainer && data.places) {
-    insertHeader(placesSearchContainer, 'Places');
-    data.places.forEach(place => {
-      const imgHTML = formatUnicorn(flagImgTemplate, { country: place.country.toLowerCase() });
-      const placeLink = document.createElement('a');
+    insertHeader(placesSearchContainer, "Places");
+    data.places.forEach((place) => {
+      const imgHTML = formatUnicorn(flagImgTemplate, {
+        country: place.country.toLowerCase(),
+      });
+      const placeLink = document.createElement("a");
       placeLink.className = locationClass;
-      placeLink.setAttribute('data-id', place.id);
-      placeLink.setAttribute('data-country', place.country);
-      placeLink.setAttribute('data-name', place.name);
-      placeLink.setAttribute('data-type', 'place');
+      placeLink.setAttribute("data-id", place.id);
+      placeLink.setAttribute("data-country", place.country);
+      placeLink.setAttribute("data-name", place.name);
+      placeLink.setAttribute("data-type", "place");
       placeLink.innerHTML = `
       ${imgHTML}
   <span>${place.name} </span>
     `;
       placesSearchContainer.appendChild(placeLink);
-      placeLink.addEventListener('click', selectClickedLocation);
+      placeLink.addEventListener("click", selectClickedLocation);
     });
   }
   // Add Weather Stations
   if (stationsSearchContainer && data.stations) {
-    insertHeader(stationsSearchContainer, 'Weather Stations');
-    data.stations.forEach(async matchedStation => {
-      if (!matchedStation.active) return;
-      const stationLink = document.createElement('a');
+    insertHeader(stationsSearchContainer, "Weather Stations");
+    data.stations.forEach(async (station) => {
+      if (!station.active) return;
+      const stationLink = document.createElement("a");
       stationLink.className = locationClass;
-      stationLink.setAttribute('data-id', matchedStation.id);
-      stationLink.setAttribute('data-country', matchedStation.country);
-      stationLink.setAttribute('data-name', matchedStation.name);
-      stationLink.setAttribute('data-region', matchedStation.region);
-      stationLink.setAttribute('data-active', matchedStation.active.toString());
-      stationLink.setAttribute('data-type', 'station');
-      const imgHTML = formatUnicorn(flagImgTemplate, { country: matchedStation.country.toLowerCase() });
+      stationLink.setAttribute("data-id", station.id);
+      stationLink.setAttribute("data-name", station.name);
+      stationLink.setAttribute("data-country", station.country);
+      if (station.region) stationLink.setAttribute("data-region", station.region);
+      stationLink.setAttribute("data-active", station.active.toString());
+      stationLink.setAttribute("data-type", "station");
+      const imgHTML = formatUnicorn(flagImgTemplate, {
+        country: station.country.toLowerCase(),
+      });
       stationLink.innerHTML = `
       ${imgHTML}
-      <span>${matchedStation.name}</span>
-      <small class="text-muted">, ${matchedStation.region}</small>
-      <code class="badge text-dark border ms-auto">${matchedStation.id}</code>
+      <span>${station.name}</span>
+      <small class="text-muted">, ${station.region}</small>
+      <code class="badge text-dark border ms-auto">${station.id}</code>
       `;
       stationsSearchContainer.appendChild(stationLink);
-      stationLink.addEventListener('click', selectClickedLocation);
+      stationLink.addEventListener("click", selectClickedLocation);
     });
   }
   updatingSearchResults = false;
@@ -1193,21 +1191,16 @@ async function populateSearchResults(searchString: string): Promise<void> {
 
 function clearSearchResults(clearSearchText: boolean = true) {
   if (updatingSearchResults) abortController.abort();
-  if (placesSearchContainer) placesSearchContainer.innerHTML = '';
-  if (stationsSearchContainer) stationsSearchContainer.innerHTML = '';
-  if (clearSearchText) searchTextInput.value = '';
-  warn('');
-}
-
-function _isInteger(val: string | null) {
-  if (val?.length && /^\s*\d+\s*$/.test(val)) return true;
-  else return false;
+  if (placesSearchContainer) placesSearchContainer.innerHTML = "";
+  if (stationsSearchContainer) stationsSearchContainer.innerHTML = "";
+  if (clearSearchText) searchTextInput.value = "";
+  // warn("clear", { cls: "blink", state: "off" });
 }
 
 // Templates
 const locationURLTemplate = "https://meteostat.net/props/en/place/${country}/${id}";
 const nearbyStationURLTemplate = "https://d.meteostat.net/app/nearby?lang=en&limit=1&lat=${latitude}&lon=${longitude}";
-const flagURLTemplate = 'https://media.meteostat.net/assets/flags/4x3/${country}.svg';
+const flagURLTemplate = "https://media.meteostat.net/assets/flags/4x3/${country}.svg";
 const flagImgTemplate = `<img src="${flagURLTemplate}"class="country-flag me-2" alt="\${country}">`;
 const api = "https://d.meteostat.net/app/";
 const locale = "en";
@@ -1215,31 +1208,19 @@ const autoCompleteURLTemplate = `${api}autocomplete?q=\${location}&lang=\${local
 const stationURLTemplate = `${api}proxy/stations/daily?station=\${stationId}&start=\${start}&end=\${end}`;
 // Web Elements
 const searchTextInput = document.getElementById("search") as HTMLInputElement;
-const placesSearchContainer = document.getElementById('places-search-container') as HTMLDivElement;
-const stationsSearchContainer = document.getElementById('stations-search-container') as HTMLDivElement;
+const placesSearchContainer = document.getElementById("places-search-container") as HTMLDivElement;
+const stationsSearchContainer = document.getElementById("stations-search-container") as HTMLDivElement;
 const stationsCheckboxContainer = document.getElementById("stationsCheckboxContainer") as HTMLDivElement;
 const yearsCheckboxContainer = document.getElementById("yearsCheckboxContainer") as HTMLDivElement;
 const weatherParamContainer = document.getElementById("weather-param-checkboxes") as HTMLDivElement;
 const customInput = document.getElementById("customInput") as HTMLTextAreaElement;
 const submissionWarning = document.getElementById("submissionWarning") as HTMLSpanElement;
 const canvasContainer = document.getElementById("canvas-container") as HTMLDivElement;
-const magnifyingGlass = document.getElementById('magnifyingGlass') as HTMLOrSVGImageElement;
-const loadingSpinner = document.getElementById('loadingSpinner') as HTMLElement;
+const magnifyingGlass = document.getElementById("magnifyingGlass") as HTMLOrSVGImageElement;
+const loadingSpinner = document.getElementById("loadingSpinner") as HTMLElement;
 const allStations = document.getElementById("all-stations") as HTMLInputElement;
-// Main Listeners
-document.getElementById("input-form")?.addEventListener('submit', renderChart);
-weatherParamContainer.addEventListener('change', renderChart);
-stationsCheckboxContainer.addEventListener('change', applyStationSelection);
-allStations.addEventListener('change', switchChartType);
-searchTextInput.addEventListener("input", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
-// searchTextInput.addEventListener("focus", async function (this: HTMLInputElement) { await populateSearchResults(this.value); });
-// searchTextInput.addEventListener("blur", async function () { clearSearchResults(false); });
-searchTextInput.addEventListener('keydown', async (event) => {
-  if (event.key === 'Escape') clearSearchResults();
-  if (event.key === 'Enter' && document.activeElement === searchTextInput) await populateSearchResults(searchTextInput.value);
-});
 // Script Variables
-const allStationsId = 'all stations';
+const allStationsId = "all stations";
 const abortController = new AbortController();
 
 const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
@@ -1256,16 +1237,28 @@ const selectedYears: Set<string> = new Set();
 const selectedCharts: Set<string> = new Set();
 
 let thisSubmission: Set<string>;
-let priorSubmission: Set<string> = new Set();
 
 const charts: Charts = {};
 const stations: Stations = new Stations();
 const stationsChartData: StationsChartData = {};
 let updatingSearchResults = false;
 
+// Main Listeners
+customInput.addEventListener("input", updateCustomYears);
+weatherParamContainer.addEventListener("change", renderChart);
+stationsCheckboxContainer.addEventListener("change", applyStationSelection);
+allStations.addEventListener("change", switchChartType);
+searchTextInput.addEventListener("input", populateSearchResults);
+searchTextInput.addEventListener("keydown", async (event) => {
+  if (event.key === "Escape") clearSearchResults();
+  if (event.key === "Enter" && document.activeElement === searchTextInput)
+    await populateSearchResults();
+});
+
 // Main execution
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener("DOMContentLoaded", async (event) => {
   clearSearchResults();
   createYearSelection();
   await getBrowserCity();
+  await renderChart(event);
 });
