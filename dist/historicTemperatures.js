@@ -347,7 +347,7 @@ function outliersByGroup(weatherData) {
     // Undefine outliers by group using the Interquartile Range (IQR) method or other methods
     const sortedData = Object.entries(weatherData).sort((a, b) => a[0].localeCompare(b[0]));
     // Group data by the index defined by the callback
-    const groupedData = sortedData.reduce((acc, [_, parameters], index) => {
+    const groupedData = sortedData.reduce((acc, [, parameters], index) => {
         const groupIndex = Math.floor(index / 30); // Group by every 30 entries (based on array index)
         // Ensure the groupIndex exists in the accumulator
         if (!(groupIndex in acc))
@@ -357,7 +357,7 @@ function outliersByGroup(weatherData) {
         return acc;
     }, {});
     // Detect outliers for each group
-    for (const [_, parameters] of Object.entries(groupedData)) {
+    for (const [, parameters] of Object.entries(groupedData)) {
         const groupParameters = parameters;
         ZScoreOutliers(groupParameters, 3.5); // You can use modifiedZScoreOutliers or IQROutliers as well
         // modifiedZScoreOutliers(groupParameters, 3.5);

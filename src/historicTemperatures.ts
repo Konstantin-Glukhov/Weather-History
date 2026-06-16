@@ -447,7 +447,7 @@ function outliersByGroup(weatherData: WeatherData): void {
 
   // Group data by the index defined by the callback
   const groupedData = sortedData.reduce(
-    (acc, [_, parameters], index) => {
+    (acc, [, parameters], index) => {
       const groupIndex = Math.floor(index / 30); // Group by every 30 entries (based on array index)
 
       // Ensure the groupIndex exists in the accumulator
@@ -462,7 +462,7 @@ function outliersByGroup(weatherData: WeatherData): void {
   );
 
   // Detect outliers for each group
-  for (const [_, parameters] of Object.entries(groupedData)) {
+  for (const [, parameters] of Object.entries(groupedData)) {
     const groupParameters = parameters as WeatherParameters[];
     ZScoreOutliers(groupParameters, 3.5); // You can use modifiedZScoreOutliers or IQROutliers as well
     // modifiedZScoreOutliers(groupParameters, 3.5);
