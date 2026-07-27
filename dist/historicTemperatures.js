@@ -913,34 +913,15 @@ function setSpinnerOrLens(mode) {
         magnifyingGlass.style.display = "block";
     }
 }
-async function selectClickedLocation(event) {
-    // this refers to the clicked element
+async function selectClickedStation(event) {
     clearSearchResults(false);
     event.preventDefault(); // Prevent the default action (navigation)
-    let id = this.getAttribute("data-id");
-    let name = this.getAttribute("data-name");
-    const country = this.getAttribute("data-country");
-    const region = this.getAttribute("data-region");
-    const active = this.getAttribute("data-active") === "true";
-    if (id == null || name == null || country == null)
+    // Safeguard against missing data
+    if (!this._attributes)
         return;
-    const locationType = this.getAttribute("data-type");
-    if (locationType === "place") {
-        const placeURL = formatUnicorn(locationURLTemplate, {
-            country: country.toLowerCase(),
-            id,
-        });
-        // Destructure: take location properties: latitude and longitude from Place 'place' property
-        const { place: { location: { latitude, longitude }, }, } = await fetchJson(placeURL);
-        const nearbyStationURL = formatUnicorn(nearbyStationURLTemplate, {
-            latitude,
-            longitude,
-        });
-        // Destructure: take properties id and name from NearbyStation 'data' property
-        ({
-            data: { id, name },
-        } = await fetchJson(nearbyStationURL));
-    }
+    const { id, name, country, region, active } = this._attributes;
+    if (!id || !name || !country)
+        return;
     stations.upsert(id, new Station({ name, country, region, active }));
     selectedStations.add(id);
     createStationsCheckboxes();
@@ -960,9 +941,7 @@ async function populateSearchResults() {
         locale: locale,
     });
     setSpinnerOrLens("on");
-    const result = await catchErrorResult(fetchJson(url, {
-        signal: abortController.signal,
-    }));
+    const result = await catchErrorResult(fetchJson(url, { signal: abortController.signal }));
     setSpinnerOrLens("off");
     if (!result.ok) {
         if (result.error.name === "AbortError") {
@@ -983,54 +962,23 @@ async function populateSearchResults() {
         header.innerText = text;
         container.appendChild(header);
     }
-    // Add Places
-    // Cannot use places because there is no API to find the nearest station
-    if (placesSearchContainer && data.places) {
-        insertHeader(placesSearchContainer, "Places");
-        data.places.forEach((place) => {
-            const imgHTML = formatUnicorn(flagImgTemplate, {
-                country: place.country.toLowerCase(),
-            });
-            const placeLink = document.createElement("a");
-            placeLink.className = locationClass;
-            placeLink.setAttribute("data-id", place.id);
-            placeLink.setAttribute("data-country", place.country);
-            placeLink.setAttribute("data-name", place.name);
-            placeLink.setAttribute("data-type", "place");
-            placeLink.innerHTML = `
-      ${imgHTML}
-  <span>${place.name} </span>
-    `;
-            placesSearchContainer.appendChild(placeLink);
-            placeLink.addEventListener("click", selectClickedLocation);
-        });
-    }
     // Add Weather Stations
     if (stationsSearchContainer && data.stations) {
         insertHeader(stationsSearchContainer, "Weather Stations");
         data.stations.forEach(async (station) => {
-            if (!station.active)
-                return;
-            const stationLink = document.createElement("a");
-            stationLink.className = locationClass;
-            stationLink.setAttribute("data-id", station.id);
-            stationLink.setAttribute("data-name", station.name);
-            stationLink.setAttribute("data-country", station.country);
-            if (station.region)
-                stationLink.setAttribute("data-region", station.region);
-            stationLink.setAttribute("data-active", station.active.toString());
-            stationLink.setAttribute("data-type", "station");
-            const imgHTML = formatUnicorn(flagImgTemplate, {
-                country: station.country.toLowerCase(),
-            });
-            stationLink.innerHTML = `
+            // if (!station.active) return; // the data source active value became false
+            // Attach the entire station object directly to the HTMLAnchorElement
+            const locaction = Object.assign(document.createElement("a"), { _attributes: station });
+            locaction.className = locationClass;
+            const imgHTML = formatUnicorn(flagImgTemplate, { country: station.country.toLowerCase() });
+            locaction.innerHTML = `
       ${imgHTML}
       <span>${station.name}</span>
       <small class="text-muted">, ${station.region}</small>
       <code class="badge text-dark border ms-auto">${station.id}</code>
       `;
-            stationsSearchContainer.appendChild(stationLink);
-            stationLink.addEventListener("click", selectClickedLocation);
+            locaction.addEventListener("click", selectClickedStation);
+            stationsSearchContainer.appendChild(locaction);
         });
     }
     updatingSearchResults = false;
@@ -1038,8 +986,6 @@ async function populateSearchResults() {
 function clearSearchResults(clearSearchText = true) {
     if (updatingSearchResults)
         abortController.abort();
-    if (placesSearchContainer)
-        placesSearchContainer.innerHTML = "";
     if (stationsSearchContainer)
         stationsSearchContainer.innerHTML = "";
     if (clearSearchText)
@@ -1047,8 +993,6 @@ function clearSearchResults(clearSearchText = true) {
     // warn("clear", { cls: "blink", state: "off" });
 }
 // Templates
-const locationURLTemplate = "https://meteostat.net/props/en/place/${country}/${id}";
-const nearbyStationURLTemplate = "https://d.meteostat.net/app/nearby?lang=en&limit=1&lat=${latitude}&lon=${longitude}";
 const flagURLTemplate = "https://media.meteostat.net/assets/flags/4x3/${country}.svg";
 const flagImgTemplate = `<img src="${flagURLTemplate}"class="country-flag me-2" alt="\${country}">`;
 const api = "https://d.meteostat.net/app/";
@@ -1057,7 +1001,6 @@ const autoCompleteURLTemplate = `${api}autocomplete?q=\${location}&lang=\${local
 const stationURLTemplate = `${api}proxy/stations/daily?station=\${stationId}&start=\${start}&end=\${end}`;
 // Web Elements
 const searchTextInput = document.getElementById("search");
-const placesSearchContainer = document.getElementById("places-search-container");
 const stationsSearchContainer = document.getElementById("stations-search-container");
 const stationsCheckboxContainer = document.getElementById("stationsCheckboxContainer");
 const yearsCheckboxContainer = document.getElementById("yearsCheckboxContainer");
