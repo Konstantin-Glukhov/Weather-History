@@ -659,7 +659,7 @@ async function getBrowserCity() {
     let { city, expiry } = await getStorageItem("local", key);
     // 2. Check if cache exists and if the current time is still before expiry
     if (!city || !expiry || todayDate > expiry) {
-        const result = await catchErrorResult(fetchJson, [ipApiUrl]);
+        const result = await catchErrorResult(fetchJson, [ipApiUrl], { isNetworkFetch: true });
         if (result.ok) {
             city = result.value.city;
             if (city) {
@@ -976,7 +976,7 @@ async function populateSearchResults() {
         locale: locale,
     });
     setSpinnerOrLens("on");
-    const result = await catchErrorResult(fetchJson, [url]);
+    const result = await catchErrorResult(fetchJson, [url], { isNetworkFetch: true });
     setSpinnerOrLens("off");
     if (!result.ok) {
         if (result.error.name === "AbortError") {

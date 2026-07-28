@@ -798,7 +798,7 @@ async function getBrowserCity(): Promise<void> {
   let { city, expiry } = await getStorageItem<IPLocation>("local", key);
   // 2. Check if cache exists and if the current time is still before expiry
   if (!city || !expiry || todayDate > expiry) {
-    const result = await catchErrorResult(fetchJson<IPLocation>, [ipApiUrl]);
+    const result = await catchErrorResult(fetchJson<IPLocation>, [ipApiUrl], {isNetworkFetch: true});
     if (result.ok) {
       city = result.value.city;
       if (city) {
@@ -1107,7 +1107,7 @@ async function populateSearchResults(): Promise<void> {
   });
 
   setSpinnerOrLens("on");
-  const result = await catchErrorResult(fetchJson<ApiResponse<{stations?: StationAttributes[]}>>, [url]);
+  const result = await catchErrorResult(fetchJson<ApiResponse<{stations?: StationAttributes[]}>>, [url], {isNetworkFetch: true});
   setSpinnerOrLens("off");
   if (!result.ok) {
     if (result.error.name === "AbortError") {
