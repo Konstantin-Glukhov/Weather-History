@@ -10,24 +10,71 @@ type ApiResponse<T> = {
 };
 */
 
-type EC<E extends Error> = abstract new (...args: string[]) => E;
-type Result<T, E extends Error> = { ok: true; value: T } | { ok: false; error: E };
+type AsyncFunction<Args extends any[] = any[], R = any> = (...args: Args) => Promise<R>;
+type DefaultErrors = Error | DOMException;
+type EC<E extends DefaultErrors> = abstract new (...args: string[]) => E;
+type Result<T, E extends DefaultErrors> = { ok: true; value: T } | { ok: false; error: E };
 
-function isInstanceOf<E extends Error>(error: unknown, constructors: EC<E>[] | undefined): error is E {
+function isInstanceOf<E extends DefaultErrors>(error: unknown, constructors: EC<E>[] | undefined): error is E {
   if (!constructors) return false;
   return constructors.some((E) => error instanceof E);
 }
 
-async function catchErrorResult<T, E extends Error>(
-  promise: Promise<T>,
-  errorsToCatch: EC<E>[] = [Error as unknown as EC<E>],
-): Promise<Result<T, E>> {
-  try {
-    const value = await promise;
-    return { ok: true, value };
-  } catch (error) {
-    if (isInstanceOf(error, errorsToCatch)) return { ok: false, error };
-    throw error;
+interface RetryOptions<E extends DefaultErrors> {
+  maxRetries?: number;
+  errorsToCatch?: EC<E>[];
+  delayMs?: number;
+  isNetworkFetch?: boolean;
+}
+
+const DEFAULT_ERRORS = [Error, DOMException];
+
+async function catchErrorResult<F extends AsyncFunction, E extends DefaultErrors>(
+  fnRef: F,
+  fnArgs: Parameters<F>,
+  options: RetryOptions<E> = {}
+): Promise<Result<Awaited<ReturnType<F>>, E>> {
+  const maxRetries = options.maxRetries ?? 3;
+  const delayMs = options.delayMs ?? 300;
+  const isNetworkFetch = options.isNetworkFetch ?? false;
+  const errorsToCatch = (options.errorsToCatch ?? DEFAULT_ERRORS) as unknown as EC<E>[];
+  let attempt = 0;
+
+  while (true) {
+    try {
+      const args = [...fnArgs];
+      if(isNetworkFetch) {
+        // For 'fetch' call create a AbortController inside the loop for every try
+        abortController = new AbortController();
+        if (args.length === 1 && typeof args[0] === 'string') {
+          // Only a URL string was provided (e.g. [url]) -> push a brand new options object
+          args.push({signal: abortController.signal});
+        } else {
+          const lastIdx = args.length - 1;
+          const lastArg = args[lastIdx];
+          if (lastArg && typeof lastArg === 'object' && !Array.isArray(lastArg))
+            args[lastIdx] = { ...lastArg, signal: abortController.signal };
+        }
+      }
+      const value = await fnRef(...args);
+      return { ok: true, value };
+    } catch (error) {
+      // If it's a known error type
+      if (isInstanceOf(error, errorsToCatch)) {
+        attempt++;
+        // If aborted and we have retry budget remaining
+        if (attempt < maxRetries && error.name === 'AbortError') {
+            // Special log if it's the Pages AbortError hiccup
+              console.warn(`Fetch aborted on github.io. Automatically retrying (${attempt}/${maxRetries})...`);
+            // Wait a brief moment for the network/routing to settle down before retrying
+            if (delayMs > 0)
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+        }
+        return { ok: false, error };
+      }
+      throw error;
+    }
   }
 }
 
@@ -64,21 +111,6 @@ class WeatherParameters {
 type SourceData = {
   date?: string;
 } & WeatherParameters;
-
-async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(url, options);
-  const contentType = response.headers.get("Content-Type");
-  let json: T;
-
-  if (contentType?.includes("application/json")) {
-    json = (await response.json()) as T;
-  } else if (contentType?.includes("text/")) {
-    const text = await response.text();
-    json = JSON.parse(text) as T;
-  } else throw new Error(`Unsupported content type: ${contentType}`);
-
-  return json;
-}
 
 type WeatherData = {
   // Object with short date (mm-dd) as key and weather parameters as value
@@ -294,6 +326,21 @@ class Stations {
         return 0;
       });
   }
+}
+
+async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("Content-Type");
+  let json: T;
+
+  if (contentType?.includes("application/json")) {
+    json = (await response.json()) as T;
+  } else if (contentType?.includes("text/")) {
+    const text = await response.text();
+    json = JSON.parse(text) as T;
+  } else throw new Error(`Unsupported content type: ${contentType}`);
+
+  return json;
 }
 
 function formatUnicorn(str: string, params: Record<string, unknown>): string {
@@ -751,7 +798,7 @@ async function getBrowserCity(): Promise<void> {
   let { city, expiry } = await getStorageItem<IPLocation>("local", key);
   // 2. Check if cache exists and if the current time is still before expiry
   if (!city || !expiry || todayDate > expiry) {
-    const result = await catchErrorResult(fetchJson<IPLocation>(ipApiUrl));
+    const result = await catchErrorResult(fetchJson<IPLocation>, [ipApiUrl]);
     if (result.ok) {
       city = result.value.city;
       if (city) {
@@ -1060,7 +1107,7 @@ async function populateSearchResults(): Promise<void> {
   });
 
   setSpinnerOrLens("on");
-  const result = await catchErrorResult(fetchJson<ApiResponse<{stations?: StationAttributes[]}>>(url, { signal: abortController.signal }));
+  const result = await catchErrorResult(fetchJson<ApiResponse<{stations?: StationAttributes[]}>>, [url]);
   setSpinnerOrLens("off");
   if (!result.ok) {
     if (result.error.name === "AbortError") {
@@ -1109,7 +1156,7 @@ async function populateSearchResults(): Promise<void> {
 }
 
 function clearSearchResults(clearSearchText: boolean = true) {
-  if (updatingSearchResults) abortController.abort();
+  if (updatingSearchResults && abortController) abortController.abort();
   if (stationsSearchContainer) stationsSearchContainer.innerHTML = "";
   if (clearSearchText) searchTextInput.value = "";
   // warn("clear", { cls: "blink", state: "off" });
@@ -1136,7 +1183,7 @@ const loadingSpinner = document.getElementById("loadingSpinner") as HTMLElement;
 const allStations = document.getElementById("all-stations") as HTMLInputElement;
 // Script Variables
 const allStationsId = "all stations";
-const abortController = new AbortController();
+let abortController: AbortController;
 
 const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
 const today = new Date();

@@ -5,15 +5,50 @@ function isInstanceOf(error, constructors) {
         return false;
     return constructors.some((E) => error instanceof E);
 }
-async function catchErrorResult(promise, errorsToCatch = [Error]) {
-    try {
-        const value = await promise;
-        return { ok: true, value };
-    }
-    catch (error) {
-        if (isInstanceOf(error, errorsToCatch))
-            return { ok: false, error };
-        throw error;
+const DEFAULT_ERRORS = [Error, DOMException];
+async function catchErrorResult(fnRef, fnArgs, options = {}) {
+    const maxRetries = options.maxRetries ?? 3;
+    const delayMs = options.delayMs ?? 300;
+    const isNetworkFetch = options.isNetworkFetch ?? false;
+    const errorsToCatch = (options.errorsToCatch ?? DEFAULT_ERRORS);
+    let attempt = 0;
+    while (true) {
+        try {
+            const args = [...fnArgs];
+            if (isNetworkFetch) {
+                // For 'fetch' call create a AbortController inside the loop for every try
+                abortController = new AbortController();
+                if (args.length === 1 && typeof args[0] === 'string') {
+                    // Only a URL string was provided (e.g. [url]) -> push a brand new options object
+                    args.push({ signal: abortController.signal });
+                }
+                else {
+                    const lastIdx = args.length - 1;
+                    const lastArg = args[lastIdx];
+                    if (lastArg && typeof lastArg === 'object' && !Array.isArray(lastArg))
+                        args[lastIdx] = { ...lastArg, signal: abortController.signal };
+                }
+            }
+            const value = await fnRef(...args);
+            return { ok: true, value };
+        }
+        catch (error) {
+            // If it's a known error type
+            if (isInstanceOf(error, errorsToCatch)) {
+                attempt++;
+                // If aborted and we have retry budget remaining
+                if (attempt < maxRetries && error.name === 'AbortError') {
+                    // Special log if it's the Pages AbortError hiccup
+                    console.warn(`Fetch aborted on github.io. Automatically retrying (${attempt}/${maxRetries})...`);
+                    // Wait a brief moment for the network/routing to settle down before retrying
+                    if (delayMs > 0)
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    continue;
+                }
+                return { ok: false, error };
+            }
+            throw error;
+        }
     }
 }
 class WeatherParameters {
@@ -38,21 +73,6 @@ class WeatherParameters {
                 // Check if the key exists in source and is not null
                 this[key] = src[key];
     }
-}
-async function fetchJson(url, options = {}) {
-    const response = await fetch(url, options);
-    const contentType = response.headers.get("Content-Type");
-    let json;
-    if (contentType?.includes("application/json")) {
-        json = (await response.json());
-    }
-    else if (contentType?.includes("text/")) {
-        const text = await response.text();
-        json = JSON.parse(text);
-    }
-    else
-        throw new Error(`Unsupported content type: ${contentType}`);
-    return json;
 }
 class ChartDataset {
     label;
@@ -229,6 +249,21 @@ class Stations {
             return 0;
         });
     }
+}
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const contentType = response.headers.get("Content-Type");
+    let json;
+    if (contentType?.includes("application/json")) {
+        json = (await response.json());
+    }
+    else if (contentType?.includes("text/")) {
+        const text = await response.text();
+        json = JSON.parse(text);
+    }
+    else
+        throw new Error(`Unsupported content type: ${contentType}`);
+    return json;
 }
 function formatUnicorn(str, params) {
     return str
@@ -624,7 +659,7 @@ async function getBrowserCity() {
     let { city, expiry } = await getStorageItem("local", key);
     // 2. Check if cache exists and if the current time is still before expiry
     if (!city || !expiry || todayDate > expiry) {
-        const result = await catchErrorResult(fetchJson(ipApiUrl));
+        const result = await catchErrorResult(fetchJson, [ipApiUrl]);
         if (result.ok) {
             city = result.value.city;
             if (city) {
@@ -941,7 +976,7 @@ async function populateSearchResults() {
         locale: locale,
     });
     setSpinnerOrLens("on");
-    const result = await catchErrorResult(fetchJson(url, { signal: abortController.signal }));
+    const result = await catchErrorResult(fetchJson, [url]);
     setSpinnerOrLens("off");
     if (!result.ok) {
         if (result.error.name === "AbortError") {
@@ -984,7 +1019,7 @@ async function populateSearchResults() {
     updatingSearchResults = false;
 }
 function clearSearchResults(clearSearchText = true) {
-    if (updatingSearchResults)
+    if (updatingSearchResults && abortController)
         abortController.abort();
     if (stationsSearchContainer)
         stationsSearchContainer.innerHTML = "";
@@ -1013,7 +1048,7 @@ const loadingSpinner = document.getElementById("loadingSpinner");
 const allStations = document.getElementById("all-stations");
 // Script Variables
 const allStationsId = "all stations";
-const abortController = new AbortController();
+let abortController;
 const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours
 const today = new Date();
 const currentYear = today.getFullYear();
