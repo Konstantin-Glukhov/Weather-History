@@ -1008,9 +1008,8 @@ async function populateSearchResults() {
             const imgHTML = formatUnicorn(flagImgTemplate, { country: station.country.toLowerCase() });
             locaction.innerHTML = `
       ${imgHTML}
-      <span>${station.name}</span>
-      <small class="text-muted">, ${station.region}</small>
-      <code class="badge text-dark border ms-auto">${station.id}</code>
+      <span>${station.name}, ${station.region}</span>
+      <span class="badge">${station.id}</span>
       `;
             locaction.addEventListener("click", selectClickedStation);
             stationsSearchContainer.appendChild(locaction);
@@ -1029,7 +1028,7 @@ function clearSearchResults(clearSearchText = true) {
 }
 // Templates
 const flagURLTemplate = "https://media.meteostat.net/assets/flags/4x3/${country}.svg";
-const flagImgTemplate = `<img src="${flagURLTemplate}"class="country-flag me-2" alt="\${country}">`;
+const flagImgTemplate = `<img src="${flagURLTemplate}"class="country-flag" alt="\${country}">`;
 const api = "https://d.meteostat.net/app/";
 const locale = "en";
 const autoCompleteURLTemplate = `${api}autocomplete?q=\${location}&lang=\${locale}`;
